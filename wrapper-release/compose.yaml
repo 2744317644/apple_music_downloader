@@ -1,0 +1,15 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TARGET_ARCH: amd64
+        NDK_VERSION: 23
+        REGISTRY_MIRROR: ${REGISTRY_MIRROR:-dockerproxy.com}
+        APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
+    volumes:
+      - ./rootfs/data:/app/rootfs/data
+    environment:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}
