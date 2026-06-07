@@ -4,21 +4,26 @@ Requires: Python 3.7+, Docker
 """
 
 import os
+import re
 import sys
 import subprocess
+import tempfile
 import time
 
-CURRENT_DIR = os.getcwd()
-DOWNLOAD_DIR = os.path.join(CURRENT_DIR, "downloads")
-CONFIG_FILE = os.path.join(CURRENT_DIR, "config.yaml")
+if getattr(sys, 'frozen', False):
+    SCRIPT_DIR = os.path.dirname(sys.executable)
+else:
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DOWNLOAD_DIR = os.path.join(SCRIPT_DIR, "downloads")
+CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.yaml")
 
 # ---- Wrapper settings (edit if needed) ----
 # Set WRAPPER_SRC to the local directory containing wrapper's Dockerfile + binary
-WRAPPER_SRC = os.environ.get("WRAPPER_SRC", os.path.join(CURRENT_DIR, "wrapper-release"))
+WRAPPER_SRC = os.environ.get("WRAPPER_SRC", os.path.join(SCRIPT_DIR, "wrapper-release"))
 WRAPPER_IMAGE = "am-wrapper:latest"
 WRAPPER_NAME = "am-wrapper"
-WRAPPER_DATA_DIR = os.path.join(CURRENT_DIR, "wrapper-data")
-WRAPPER_TAR = os.path.join(CURRENT_DIR, "am-wrapper.tar")
+WRAPPER_DATA_DIR = os.path.join(SCRIPT_DIR, "wrapper-data")
+WRAPPER_TAR = os.path.join(SCRIPT_DIR, "am-wrapper.tar")
 
 REGISTRY_MIRROR = os.environ.get("REGISTRY_MIRROR", "dockerproxy.com")
 APT_MIRROR = os.environ.get("APT_MIRROR", "mirrors.tuna.tsinghua.edu.cn")
@@ -29,7 +34,7 @@ ACCOUNT_PORT = 30020
 
 # ---- Downloader settings ----
 DL_IMAGE = "ghcr.io/zhaarey/apple-music-downloader:latest"
-DL_TAR = os.path.join(CURRENT_DIR, "am-downloader.tar")
+DL_TAR = os.path.join(SCRIPT_DIR, "am-downloader.tar")
 
 # ---- ANSI colors ----
 R = "\033[0m"
@@ -101,7 +106,7 @@ def build_wrapper_image():
     if not os.path.isdir(src):
         print(f"{E}[ERROR] Wrapper source not found: {src}{R}")
         print(f"{Y}  Set the WRAPPER_SRC env var or drop the release folder as:{R}")
-        print(f"{Y}    {os.path.join(CURRENT_DIR, 'wrapper-release')}{R}")
+        print(f"{Y}    {os.path.join(SCRIPT_DIR, 'wrapper-release')}{R}")
         print(f"{Y}  The folder must contain: Dockerfile, wrapper (binary), rootfs/, entrypoint.sh{R}")
         return False
 
@@ -302,14 +307,32 @@ def invoke_downloader(arguments, description):
     print()
     print(f"{M}>>> {description}{R}")
     print()
-    args = ["run", "--rm", "-it", "--network", "host",
-            "-v", f"{DOWNLOAD_DIR}:/downloads",
-            "-v", f"{CONFIG_FILE}:/app/config.yaml",
-            DL_IMAGE]
-    args.extend(arguments.split())
-    code = _live("docker", *args)
-    if code != 0:
-        print(f"\n{Y}[WARN] Docker exited with code {code}{R}")
+
+    with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+        config_content = f.read()
+    for folder_key in ['alac-save-folder', 'atmos-save-folder', 'aac-save-folder', 'mv-save-folder']:
+        config_content = re.sub(
+            rf'^({folder_key}:\s*)"?([^"\n]+)"?',
+            rf'\1"/downloads/\2"',
+            config_content,
+            flags=re.MULTILINE,
+        )
+
+    tmp_config = os.path.join(tempfile.gettempdir(), 'am_config_temp.yaml')
+    with open(tmp_config, 'w', encoding='utf-8') as f:
+        f.write(config_content)
+
+    try:
+        args = ["run", "--rm", "-it", "--network", "host",
+                "-v", f"{DOWNLOAD_DIR}:/downloads",
+                "-v", f"{tmp_config}:/app/config.yaml",
+                DL_IMAGE]
+        args.extend(arguments.split())
+        code = _live("docker", *args)
+        if code != 0:
+            print(f"\n{Y}[WARN] Docker exited with code {code}{R}")
+    finally:
+        os.remove(tmp_config)
     print(f"\n{G}Output: {DOWNLOAD_DIR}{R}")
     print()
     input("Press Enter to return to menu")
