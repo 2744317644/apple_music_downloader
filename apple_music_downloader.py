@@ -25,7 +25,6 @@ WRAPPER_SRC = os.environ.get("WRAPPER_SRC", os.path.join(DATA_DIR, "assets", "Wr
 WRAPPER_IMAGE = "wrapper:local"
 WRAPPER_NAME = "am-wrapper"
 WRAPPER_DATA_DIR = os.path.join(APP_DATA_DIR, "wrapper-data")
-WRAPPER_TAR = os.path.join(SCRIPT_DIR, "am-wrapper.tar")
 
 DECRYPT_PORT = 10020
 M3U8_PORT = 20020
@@ -36,7 +35,6 @@ REGISTRY_MIRROR = os.environ.get("REGISTRY_MIRROR", "docker.1ms.run")
 # ---- Downloader settings ----
 DL_SRC = os.environ.get("DL_SRC", os.path.join(DATA_DIR, "assets", "apple-music-downloader"))
 DL_IMAGE = "apple-music-downloader:local"
-DL_TAR = os.path.join(SCRIPT_DIR, "am-downloader.tar")
 
 # ---- ANSI colors ----
 R = "\033[0m"
@@ -87,19 +85,6 @@ def _live(*args):
 def wrapper_running():
     out = _run("docker", "ps", "-q", "-f", f"name={WRAPPER_NAME}", silent=True)
     return len(out) > 0
-
-
-def load_image(tar_path, image_name):
-    """Import Docker image from tar if not already present."""
-    if os.path.isfile(tar_path):
-        if not _run("docker", "images", "-q", image_name, silent=True):
-            print(f"{C}Importing image from {os.path.basename(tar_path)}...{R}")
-            code = _live("docker", "load", "-i", tar_path)
-            if code != 0:
-                print(f"{E}[ERROR] Failed to import {image_name}{R}")
-                return False
-            print(f"{G}[OK] {image_name} imported.{R}")
-    return True
 
 
 def build_wrapper_image():
@@ -218,9 +203,7 @@ def wrapper_login():
 
     if os.path.isfile(db_file):
         return True
-    else:
-        print(f"{E}[ERROR] Login may have failed. No credential database created.{R}")
-        return False
+    return False
 
 
 def start_wrapper():

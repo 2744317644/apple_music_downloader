@@ -31,7 +31,6 @@ WRAPPER_SRC = os.environ.get("WRAPPER_SRC", os.path.join(DATA_DIR, "assets", "Wr
 WRAPPER_IMAGE = "wrapper:local"
 WRAPPER_NAME = "am-wrapper"
 WRAPPER_DATA_DIR = os.path.join(APP_DATA_DIR, "wrapper-data")
-WRAPPER_TAR = os.path.join(SCRIPT_DIR, "am-wrapper.tar")
 
 DECRYPT_PORT = 10020
 M3U8_PORT = 20020
@@ -125,13 +124,6 @@ def _live(*args):
 def wrapper_running():
     out = _run("docker", "ps", "-q", "-f", f"name={WRAPPER_NAME}", silent=True)
     return len(out) > 0
-
-
-def load_image(tar_path, image_name):
-    if os.path.isfile(tar_path):
-        if not _run("docker", "images", "-q", image_name, silent=True):
-            _live("docker", "load", "-i", tar_path)
-    return True
 
 
 def build_wrapper_image(log_callback=None):
@@ -713,8 +705,6 @@ class MainPage(AppPage):
         self._mode_entry.configure(state="readonly")
         self._mode_entry.bind("<Button-1>", lambda e: self._show_mode_popup())
 
-        self._mode_label = self._mode_entry
-
         self._url_var = ctk.StringVar()
         self._url_entry = ctk.CTkEntry(ctrl_row, height=36, corner_radius=8,
                                        fg_color=c["input_bg"], text_color=c["text"],
@@ -789,9 +779,6 @@ class MainPage(AppPage):
                                               hover_color=c["divider"],
                                               command=self._open_output_dir)
         self._open_folder_btn.pack(side="right", padx=(0, 8), pady=2)
-
-    def _insert(self, text):
-        self.console.insert("end", text)
 
     def _clear_url(self):
         self._url_var.set("")
@@ -1038,23 +1025,6 @@ class MainPage(AppPage):
                                  button_hover_color=c["primary_hover"],
                                  font=ctk.CTkFont(family=f, size=11))
         menu.pack(side="left")
-        self._extra_widgets.extend([row, var])
-
-    def _add_extra_entry(self, label, default):
-        c = self.app.colors
-        f = FONT_FAMILY
-        row = ctk.CTkFrame(self._extra_row, fg_color="transparent")
-        row.pack(fill="x", pady=2)
-        ctk.CTkLabel(row, text=label, font=ctk.CTkFont(family=f, size=11),
-                     text_color=c["text_secondary"], width=55, anchor="w").pack(side="left")
-        var = ctk.StringVar(value=default)
-        entry = ctk.CTkEntry(row, height=30, corner_radius=6,
-                             fg_color=c["input_bg"], text_color=c["text"],
-                             border_color=c["border"],
-                             font=ctk.CTkFont(family=f, size=11),
-                             textvariable=var)
-        entry.pack(fill="x", padx=(0, 0))
-        entry.bind("<Return>", lambda e: self._start_download())
         self._extra_widgets.extend([row, var])
 
     def _ensure_prereqs(self):
