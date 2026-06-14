@@ -476,8 +476,8 @@ class SetupPage(AppPage):
     def _run_setup(self):
         steps = [
             ("Docker", self._check_docker),
-            ("Wrapper Image", self._check_wrapper),
-            ("Downloader Image", self._check_downloader),
+            ("Build Wrapper Image", self._check_wrapper),
+            ("Build Downloader Image", self._check_downloader),
             ("Start Wrapper", self._start_wrapper),
         ]
         total = len(steps)
@@ -568,7 +568,7 @@ class LoginPage(AppPage):
         ctk.CTkLabel(container, text="Sign In",
                      font=ctk.CTkFont(family=f, size=26, weight="bold"),
                      text_color=c["text"]).pack(pady=(40, 8))
-        ctk.CTkLabel(container, text="登录一次即可缓存凭据，无需重复输入",
+        ctk.CTkLabel(container, text="Tips: 登录一次即可缓存凭据，无需重复输入",
                      font=ctk.CTkFont(family=f, size=13),
                      text_color=c["text_secondary"]).pack(pady=(0, 24))
 

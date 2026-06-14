@@ -9,9 +9,11 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=bind,target=. \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /bin/apple-music-dl main.go
 
-FROM ${REGISTRY_MIRROR}/library/ubuntu:latest
+FROM ${REGISTRY_MIRROR}/library/ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && \
+RUN sed -i "s@http://.*archive.ubuntu.com@http://mirrors.tuna.tsinghua.edu.cn@g" /etc/apt/sources.list.d/ubuntu.sources && \
+    sed -i "s@http://.*security.ubuntu.com@http://mirrors.tuna.tsinghua.edu.cn@g" /etc/apt/sources.list.d/ubuntu.sources && \
+    apt-get update && \
     apt-get install -y --no-install-recommends gpac ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=builder /bin/apple-music-dl /usr/local/bin/apple-music-dl
