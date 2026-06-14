@@ -330,16 +330,12 @@ def invoke_downloader(arguments, description):
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             config_content = f.read()
     except FileNotFoundError:
-        config_content = (
-            "decrypt-m3u8-port: host.docker.internal:10020\n"
-            "get-m3u8-port: host.docker.internal:20020\n"
-            "get-m3u8-from-device: true\n"
-            "get-m3u8-mode: hires\n"
-            "alac-max: 192000\n"
-            "embed-cover: true\n"
-            "cover-size: 5000x5000\n"
-            "cover-format: jpg\n"
-        )
+        config_path = os.path.join(DATA_DIR, "assets", "apple-music-downloader", "config.yaml.example")
+        if os.path.isfile(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_content = f.read()
+        else:
+            config_content = ""
     for folder_key in ['alac-save-folder', 'atmos-save-folder', 'aac-save-folder', 'mv-save-folder']:
         config_content = re.sub(
             rf'^({folder_key}:\s*)"?([^"\n]+)"?',
