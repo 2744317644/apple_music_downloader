@@ -169,3 +169,12 @@ GUI 支持浅色/深色主题切换。
 
 **Q: GUI 启动闪退？**
 确保 Docker 已安装且正常运行。
+
+## 致谢
+
+本项目基于以下优秀的开源项目构建：
+
+- **[apple-music-downloader](https://github.com/zhaarey/apple-music-downloader)** — Apple Music ALAC / Atmos / AAC 下载核心，提供 Go 语言实现的完整下载引擎
+- **Apple Music Wrapper** — Apple Music Android DRM 解密服务，提供 FairPlay 解密与 M3U8 获取能力
+
+感谢以上项目的作者和贡献者们。
