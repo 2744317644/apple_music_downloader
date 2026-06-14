@@ -135,6 +135,7 @@ def build_wrapper_image(log_callback=None):
         return False, f"{src} must contain Dockerfile"
     if log_callback:
         log_callback(f"Building wrapper image from: {src}")
+        log_callback(f"  REGISTRY_MIRROR={REGISTRY_MIRROR}")
     err_lines = []
     proc = subprocess.Popen(["docker", "build",
         "--build-arg", f"REGISTRY_MIRROR={REGISTRY_MIRROR}",
@@ -249,6 +250,7 @@ def build_downloader_image(log_callback=None):
         return False, f"{src} must contain Dockerfile"
     if log_callback:
         log_callback(f"Building downloader image from: {src}")
+        log_callback(f"  REGISTRY_MIRROR={REGISTRY_MIRROR}")
     err_lines = []
     proc = subprocess.Popen(["docker", "build",
         "--build-arg", f"REGISTRY_MIRROR={REGISTRY_MIRROR}",
