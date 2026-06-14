@@ -36,7 +36,7 @@ DECRYPT_PORT = 10020
 M3U8_PORT = 20020
 ACCOUNT_PORT = 30020
 
-REGISTRY_MIRROR = os.environ.get("REGISTRY_MIRROR", "docker.m.daocloud.io")
+REGISTRY_MIRROR = os.environ.get("REGISTRY_MIRROR", "docker.io")
 
 # ---- Downloader settings ----
 DL_SRC = os.environ.get("DL_SRC", os.path.join(DATA_DIR, "assets", "apple-music-downloader"))
