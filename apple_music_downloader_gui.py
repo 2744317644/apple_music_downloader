@@ -38,7 +38,6 @@ M3U8_PORT = 20020
 ACCOUNT_PORT = 30020
 
 REGISTRY_MIRROR = os.environ.get("REGISTRY_MIRROR", "docker.1ms.run")
-HTTP_PROXY = os.environ.get("HTTP_PROXY", "")
 
 # ---- Downloader settings ----
 DL_SRC = os.environ.get("DL_SRC", os.path.join(DATA_DIR, "assets", "apple-music-downloader"))
@@ -1136,10 +1135,8 @@ class MainPage(AppPage):
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             f.write(config_content)
         try:
-            args = ["run", "--rm"]
-            if HTTP_PROXY:
-                args.extend(["-e", f"HTTP_PROXY={HTTP_PROXY}", "-e", f"HTTPS_PROXY={HTTP_PROXY}"])
-            args.extend(["-v", f"{DOWNLOAD_DIR}:/downloads",
+            args = ["run", "--rm",
+                    "-v", f"{DOWNLOAD_DIR}:/downloads",
                     "-v", f"{tmp_config}:/app/config.yaml",
                     DL_IMAGE])
             args.extend(arguments.split())
