@@ -135,13 +135,21 @@ def build_wrapper_image(log_callback=None):
         return False, f"{src} must contain Dockerfile"
     if log_callback:
         log_callback(f"Building wrapper image from: {src}")
-    proc = subprocess.run(["docker", "build",
+    err_lines = []
+    proc = subprocess.Popen(["docker", "build",
         "--build-arg", f"REGISTRY_MIRROR={REGISTRY_MIRROR}",
         "--tag", WRAPPER_IMAGE, src],
-        capture_output=True, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         startupinfo=_SI, creationflags=_CF)
+    for line in proc.stdout:
+        line = line.strip()
+        if line:
+            if log_callback:
+                log_callback(line)
+            err_lines.append(line)
+    proc.wait()
     if proc.returncode != 0:
-        err = proc.stderr.strip() or proc.stdout.strip() or "Unknown error"
+        err = "\n".join(err_lines[-10:]) or "Unknown error"
         return False, f"Build failed: {err[:500]}"
     return True, f"Wrapper image built: {WRAPPER_IMAGE}"
 
@@ -241,13 +249,21 @@ def build_downloader_image(log_callback=None):
         return False, f"{src} must contain Dockerfile"
     if log_callback:
         log_callback(f"Building downloader image from: {src}")
-    proc = subprocess.run(["docker", "build",
+    err_lines = []
+    proc = subprocess.Popen(["docker", "build",
         "--build-arg", f"REGISTRY_MIRROR={REGISTRY_MIRROR}",
         "--tag", DL_IMAGE, src],
-        capture_output=True, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         startupinfo=_SI, creationflags=_CF)
+    for line in proc.stdout:
+        line = line.strip()
+        if line:
+            if log_callback:
+                log_callback(line)
+            err_lines.append(line)
+    proc.wait()
     if proc.returncode != 0:
-        err = proc.stderr.strip() or proc.stdout.strip() or "Unknown error"
+        err = "\n".join(err_lines[-10:]) or "Unknown error"
         return False, f"Build failed: {err[:500]}"
     return True, f"Downloader image built: {DL_IMAGE}"
 
