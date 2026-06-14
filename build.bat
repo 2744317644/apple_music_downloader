@@ -131,6 +131,6 @@ if %ERRORLEVEL% neq 0 (
     echo   Installing %~1...
     python -m pip install %~1 --quiet
 ) else (
-    echo   %~1: 已存在
+    echo   %~1: OK
 )
 exit /b
