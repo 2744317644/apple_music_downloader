@@ -126,8 +126,8 @@ pause
 exit /b
 
 :check_pkg
-for /f "tokens=*" %%p in ('python -c "import %~1; print('OK')" 2^>nul') do set "RES=%%p"
-if not "%RES%"=="OK" (
+for /f "tokens=*" %%p in ('python -c "import %~1" 2^>nul') do set "RES=%%p"
+if not "!RES!"=="OK" (
     echo Installing %~1...
     python -m pip install %~1 --quiet
 )
