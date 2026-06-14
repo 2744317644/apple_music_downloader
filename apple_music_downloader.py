@@ -165,7 +165,7 @@ def wrapper_login():
     _run("docker", "rm", "-f", f"{WRAPPER_NAME}-login", silent=True)
     os.makedirs(WRAPPER_DATA_DIR, exist_ok=True)
     code = _live(
-        "docker", "run", "-d", "--rm",
+        "docker", "run", "-d",
         "--name", f"{WRAPPER_NAME}-login",
         "--privileged",
         "-v", f"{os.path.abspath(WRAPPER_DATA_DIR)}:/app/rootfs/data",
@@ -193,8 +193,11 @@ def wrapper_login():
         time.sleep(2)
         waited += 2
 
-    # Show recent logs
+    # Show logs and exit status
     print()
+    exit_code = _run("docker", "inspect", "-f", "{{.State.ExitCode}}", f"{WRAPPER_NAME}-login", silent=True)
+    if exit_code:
+        print(f"{Y}[INFO] Login container exited with code: {exit_code}{R}")
     _live("docker", "logs", f"{WRAPPER_NAME}-login")
     print()
 
