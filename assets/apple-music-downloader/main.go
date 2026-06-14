@@ -172,17 +172,7 @@ func checkUrlArtist(url string) (string, string) {
 }
 func getUrlSong(songUrl string, token string) (string, error) {
 	storefront, songId := checkUrlSong(songUrl)
-	manifest, err := ampapi.GetSongResp(storefront, songId, Config.Language, token)
-	if err != nil {
-		fmt.Println("\u26A0 Failed to get manifest:", err)
-		counter.NotSong++
-		return "", err
-	}
-	albumId := manifest.Data[0].Relationships.Albums.Data[0].ID
-	songAlbumUrl := fmt.Sprintf("https://music.apple.com/%s/album/1/%s?i=%s", storefront, albumId, songId)
-	return songAlbumUrl, nil
-}
-func getUrlArtistName(artistUrl string, token string) (string, string, error) {
+	manifest, err := ampapi.GetSongResp(storefront, songId, Config.Language, token, Config.MediaUserToken)
 	storefront, artistId := checkUrlArtist(artistUrl)
 	req, err := http.NewRequest("GET", fmt.Sprintf("https://amp-api.music.apple.com/v1/catalog/%s/artists/%s", storefront, artistId), nil)
 	if err != nil {
@@ -961,7 +951,7 @@ func ripTrack(track *task.Track, token string, mediaUserToken string) {
 
 	//提前获取到的播放列表下track所在的专辑信息
 	if track.PreType == "playlists" && Config.UseSongInfoForPlaylist {
-		track.GetAlbumData(token)
+		track.GetAlbumData(token, mediaUserToken)
 	}
 
 	//get lrc
@@ -1285,7 +1275,7 @@ func ripStation(albumId string, token string, storefront string, mediaUserToken 
 
 func ripAlbum(albumId string, token string, storefront string, mediaUserToken string, urlArg_i string) error {
 	album := task.NewAlbum(storefront, albumId)
-	err := album.GetResp(token, Config.Language)
+	err := album.GetResp(token, Config.Language, mediaUserToken)
 	if err != nil {
 		fmt.Println("Failed to get album response.")
 		return err
@@ -1300,7 +1290,7 @@ func ripAlbum(albumId string, token string, storefront string, mediaUserToken st
 			fmt.Printf("\nTrack %d of %d:\n", trackNum, len(meta.Data[0].Relationships.Tracks.Data))
 			fmt.Printf("%02d. %s\n", trackNum, track.Attributes.Name)
 
-			manifest, err := ampapi.GetSongResp(storefront, track.ID, album.Language, token)
+			manifest, err := ampapi.GetSongResp(storefront, track.ID, album.Language, token, mediaUserToken)
 			if err != nil {
 				fmt.Printf("Failed to get manifest for track %d: %v\n", trackNum, err)
 				continue
@@ -1379,7 +1369,7 @@ func ripAlbum(albumId string, token string, storefront string, mediaUserToken st
 		} else if dl_aac && Config.AacType == "aac-lc" {
 			Quality = "256Kbps"
 		} else {
-			manifest1, err := ampapi.GetSongResp(storefront, meta.Data[0].Relationships.Tracks.Data[0].ID, album.Language, token)
+			manifest1, err := ampapi.GetSongResp(storefront, meta.Data[0].Relationships.Tracks.Data[0].ID, album.Language, token, mediaUserToken)
 			if err != nil {
 				fmt.Println("Failed to get manifest.\n", err)
 			} else {
@@ -1564,7 +1554,7 @@ func ripAlbum(albumId string, token string, storefront string, mediaUserToken st
 }
 func ripPlaylist(playlistId string, token string, storefront string, mediaUserToken string) error {
 	playlist := task.NewPlaylist(storefront, playlistId)
-	err := playlist.GetResp(token, Config.Language)
+	err := playlist.GetResp(token, Config.Language, mediaUserToken)
 	if err != nil {
 		fmt.Println("Failed to get playlist response.")
 		return err
@@ -1579,7 +1569,7 @@ func ripPlaylist(playlistId string, token string, storefront string, mediaUserTo
 			fmt.Printf("\nTrack %d of %d:\n", trackNum, len(meta.Data[0].Relationships.Tracks.Data))
 			fmt.Printf("%02d. %s\n", trackNum, track.Attributes.Name)
 
-			manifest, err := ampapi.GetSongResp(storefront, track.ID, playlist.Language, token)
+			manifest, err := ampapi.GetSongResp(storefront, track.ID, playlist.Language, token, mediaUserToken)
 			if err != nil {
 				fmt.Printf("Failed to get manifest for track %d: %v\n", trackNum, err)
 				continue
@@ -1651,7 +1641,7 @@ func ripPlaylist(playlistId string, token string, storefront string, mediaUserTo
 		} else if dl_aac && Config.AacType == "aac-lc" {
 			Quality = "256Kbps"
 		} else {
-			manifest1, err := ampapi.GetSongResp(storefront, meta.Data[0].Relationships.Tracks.Data[0].ID, playlist.Language, token)
+			manifest1, err := ampapi.GetSongResp(storefront, meta.Data[0].Relationships.Tracks.Data[0].ID, playlist.Language, token, mediaUserToken)
 			if err != nil {
 				fmt.Println("Failed to get manifest.\n", err)
 			} else {
@@ -2694,13 +2684,7 @@ func extractVideo(c string) (string, error) {
 
 func ripSong(songId string, token string, storefront string, mediaUserToken string) error {
 	// Get song info to find album ID
-	manifest, err := ampapi.GetSongResp(storefront, songId, Config.Language, token)
-	if err != nil {
-		fmt.Println("Failed to get song response.")
-		return err
-	}
-
-	songData := manifest.Data[0]
+	manifest, err := ampapi.GetSongResp(storefront, songId, Config.Language, token, mediaUserToken)
 	albumId := songData.Relationships.Albums.Data[0].ID
 
 	// Use album approach but only download the specific song

@@ -60,7 +60,7 @@ func (a *Station) GetResp(mutoken, token, l string) error {
 	//fmt.Println("Getting album response")
 	//从resp中的Tracks数据中提取trackData信息到新的Track结构体中
 	for i, trackData := range tracksResp.Data {
-		albumResp, err := ampapi.GetAlbumRespByHref(trackData.Href, a.Language, token)
+		albumResp, err := ampapi.GetAlbumRespByHref(trackData.Href, a.Language, token, mutoken)
 		if err != nil {
 			fmt.Println("Error getting album response:", err)
 			continue

@@ -38,10 +38,10 @@ func NewAlbum(st string, id string) *Album {
 
 }
 
-func (a *Album) GetResp(token, l string) error {
+func (a *Album) GetResp(token, l, mediaUserToken string) error {
 	var err error
 	a.Language = l
-	resp, err := ampapi.GetAlbumResp(a.Storefront, a.ID, a.Language, token)
+	resp, err := ampapi.GetAlbumResp(a.Storefront, a.ID, a.Language, token, mediaUserToken)
 	if err != nil {
 		return fmt.Errorf("error getting album response: %w", err)
 	}

@@ -38,10 +38,10 @@ func NewPlaylist(st string, id string) *Playlist {
 
 }
 
-func (a *Playlist) GetResp(token, l string) error {
+func (a *Playlist) GetResp(token, l string, mediaUserToken string) error {
 	var err error
 	a.Language = l
-	resp, err := ampapi.GetPlaylistResp(a.Storefront, a.ID, a.Language, token)
+	resp, err := ampapi.GetPlaylistResp(a.Storefront, a.ID, a.Language, token, mediaUserToken)
 	if err != nil {
 		return fmt.Errorf("error getting playlist response: %w", err)
 	}
