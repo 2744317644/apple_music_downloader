@@ -14,7 +14,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN sed -i "s@http://.*archive.ubuntu.com@http://mirrors.tuna.tsinghua.edu.cn@g" /etc/apt/sources.list.d/ubuntu.sources && \
     sed -i "s@http://.*security.ubuntu.com@http://mirrors.tuna.tsinghua.edu.cn@g" /etc/apt/sources.list.d/ubuntu.sources && \
     apt-get update && \
-    apt-get install -y --no-install-recommends gpac ffmpeg && \
+    apt-get install -y --no-install-recommends ca-certificates gpac ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=builder /bin/apple-music-dl /usr/local/bin/apple-music-dl
 WORKDIR /app
