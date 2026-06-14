@@ -694,14 +694,14 @@ class MainPage(AppPage):
         ctrl_row = ctk.CTkFrame(card_inner, fg_color="transparent")
         ctrl_row.pack(fill="x")
 
-        self._mode_var = ctk.StringVar(value="song")
+        self._mode_var = ctk.StringVar(value="album")
         self._mode_entry = ctk.CTkEntry(ctrl_row, height=36, corner_radius=8,
                                         fg_color=c["input_bg"], text_color=c["text"],
                                         border_color=c["border"],
                                         font=ctk.CTkFont(family=f, size=13),
                                         width=150)
         self._mode_entry.pack(side="left", padx=(0, 8))
-        self._mode_entry.insert(0, "单曲")
+        self._mode_entry.insert(0, "专辑")
         self._mode_entry.configure(state="readonly")
         self._mode_entry.bind("<Button-1>", lambda e: self._show_mode_popup())
 
