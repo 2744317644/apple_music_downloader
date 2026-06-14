@@ -135,11 +135,14 @@ def build_wrapper_image(log_callback=None):
         return False, f"{src} must contain Dockerfile"
     if log_callback:
         log_callback(f"Building wrapper image from: {src}")
-    code = _live("docker", "build",
+    proc = subprocess.run(["docker", "build",
         "--build-arg", f"REGISTRY_MIRROR={REGISTRY_MIRROR}",
-        "--tag", WRAPPER_IMAGE, src)
-    if code != 0:
-        return False, "Build failed"
+        "--tag", WRAPPER_IMAGE, src],
+        capture_output=True, text=True,
+        startupinfo=_SI, creationflags=_CF)
+    if proc.returncode != 0:
+        err = proc.stderr.strip() or proc.stdout.strip() or "Unknown error"
+        return False, f"Build failed: {err[:500]}"
     return True, f"Wrapper image built: {WRAPPER_IMAGE}"
 
 
@@ -238,11 +241,14 @@ def build_downloader_image(log_callback=None):
         return False, f"{src} must contain Dockerfile"
     if log_callback:
         log_callback(f"Building downloader image from: {src}")
-    code = _live("docker", "build",
+    proc = subprocess.run(["docker", "build",
         "--build-arg", f"REGISTRY_MIRROR={REGISTRY_MIRROR}",
-        "--tag", DL_IMAGE, src)
-    if code != 0:
-        return False, "Build failed"
+        "--tag", DL_IMAGE, src],
+        capture_output=True, text=True,
+        startupinfo=_SI, creationflags=_CF)
+    if proc.returncode != 0:
+        err = proc.stderr.strip() or proc.stdout.strip() or "Unknown error"
+        return False, f"Build failed: {err[:500]}"
     return True, f"Downloader image built: {DL_IMAGE}"
 
 
