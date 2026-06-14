@@ -1,4 +1,4 @@
-ARG REGISTRY_MIRROR=docker.1ms.run
+ARG REGISTRY_MIRROR=docker.m.daocloud.io
 ARG BUILD_PLATFORM=linux/amd64
 ARG RUNTIME_PLATFORM=linux/amd64
 
