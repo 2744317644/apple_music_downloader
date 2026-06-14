@@ -173,7 +173,7 @@ def wrapper_login():
         "-e", f"PASSWORD={password}",
         "--entrypoint", "/bin/sh",
         WRAPPER_IMAGE,
-        "-c", "mkdir -p /app/rootfs/system/usr/share/zoneinfo /app/rootfs/etc; cp /usr/share/zoneinfo/tzdata.zi /app/rootfs/system/usr/share/zoneinfo/tzdata; cp /etc/hosts /app/rootfs/etc/hosts; cp /etc/resolv.conf /app/rootfs/etc/resolv.conf; export ANDROID_ROOT=/app/rootfs/system; export ANDROID_DATA=/app/rootfs/data; mkdir -p /app/rootfs/data/data/com.apple.android.music/files/mpl_db; exec strace -f /app/wrapper -L ${USERNAME}:${PASSWORD} -F -H 0.0.0.0",
+        "-c", "mkdir -p /app/rootfs/system/usr/share/zoneinfo /app/rootfs/etc; cp /usr/share/zoneinfo/tzdata.zi /app/rootfs/system/usr/share/zoneinfo/tzdata; cp /etc/hosts /app/rootfs/etc/hosts; cp /etc/resolv.conf /app/rootfs/etc/resolv.conf; export ANDROID_ROOT=/app/rootfs/system; export ANDROID_DATA=/app/rootfs/data; mkdir -p /app/rootfs/data/data/com.apple.android.music/files/mpl_db; exec /app/wrapper -L ${USERNAME}:${PASSWORD} -F -H 0.0.0.0",
     )
     if code != 0:
         print(f"{E}[ERROR] Failed to start login container.{R}")
@@ -259,7 +259,7 @@ def start_wrapper():
         "-p", f"{ACCOUNT_PORT}:{ACCOUNT_PORT}",
         "--entrypoint", "/bin/sh",
         WRAPPER_IMAGE,
-        "-c", "mkdir -p /app/rootfs/system/usr/share/zoneinfo /app/rootfs/etc; cp /usr/share/zoneinfo/tzdata.zi /app/rootfs/system/usr/share/zoneinfo/tzdata; cp /etc/hosts /app/rootfs/etc/hosts; cp /etc/resolv.conf /app/rootfs/etc/resolv.conf; export ANDROID_ROOT=/app/rootfs/system; export ANDROID_DATA=/app/rootfs/data; exec strace -f /app/wrapper -H 0.0.0.0",
+        "-c", "mkdir -p /app/rootfs/system/usr/share/zoneinfo /app/rootfs/etc; cp /usr/share/zoneinfo/tzdata.zi /app/rootfs/system/usr/share/zoneinfo/tzdata; cp /etc/hosts /app/rootfs/etc/hosts; cp /etc/resolv.conf /app/rootfs/etc/resolv.conf; export ANDROID_ROOT=/app/rootfs/system; export ANDROID_DATA=/app/rootfs/data; exec /app/wrapper -H 0.0.0.0",
     )
     if code != 0:
         print(f"{E}[ERROR] Failed to start wrapper.{R}")
