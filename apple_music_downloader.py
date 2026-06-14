@@ -32,6 +32,7 @@ M3U8_PORT = 20020
 ACCOUNT_PORT = 30020
 
 REGISTRY_MIRROR = os.environ.get("REGISTRY_MIRROR", "docker.1ms.run")
+APT_MIRROR = os.environ.get("APT_MIRROR", "mirrors.tuna.tsinghua.edu.cn")
 HTTP_PROXY = os.environ.get("HTTP_PROXY", "")
 
 # ---- Downloader settings ----
@@ -121,6 +122,7 @@ def build_wrapper_image():
     print(f"{C}Building wrapper image from: {src}{R}")
     code = _live("docker", "build",
         "--build-arg", f"REGISTRY_MIRROR={REGISTRY_MIRROR}",
+        "--build-arg", f"APT_MIRROR={APT_MIRROR}",
         "--tag", WRAPPER_IMAGE, src)
     if code != 0:
         print(f"{E}[ERROR] Build failed.{R}")
@@ -171,7 +173,7 @@ def wrapper_login():
         "-e", f"PASSWORD={password}",
         "--entrypoint", "/bin/sh",
         WRAPPER_IMAGE,
-        "-c", "apt-get update -qq 2>/dev/null; apt-get install -y -qq strace tzdata 2>/dev/null; mkdir -p /app/rootfs/system/usr/share/zoneinfo /app/rootfs/etc; cp /usr/share/zoneinfo/tzdata.zi /app/rootfs/system/usr/share/zoneinfo/tzdata; cp /etc/hosts /app/rootfs/etc/hosts; cp /etc/resolv.conf /app/rootfs/etc/resolv.conf; export ANDROID_ROOT=/app/rootfs/system; export ANDROID_DATA=/app/rootfs/data; mkdir -p /app/rootfs/data/data/com.apple.android.music/files/mpl_db; exec strace -f /app/wrapper -L ${USERNAME}:${PASSWORD} -F -H 0.0.0.0",
+        "-c", "mkdir -p /app/rootfs/system/usr/share/zoneinfo /app/rootfs/etc; cp /usr/share/zoneinfo/tzdata.zi /app/rootfs/system/usr/share/zoneinfo/tzdata; cp /etc/hosts /app/rootfs/etc/hosts; cp /etc/resolv.conf /app/rootfs/etc/resolv.conf; export ANDROID_ROOT=/app/rootfs/system; export ANDROID_DATA=/app/rootfs/data; mkdir -p /app/rootfs/data/data/com.apple.android.music/files/mpl_db; exec strace -f /app/wrapper -L ${USERNAME}:${PASSWORD} -F -H 0.0.0.0",
     )
     if code != 0:
         print(f"{E}[ERROR] Failed to start login container.{R}")
@@ -254,7 +256,7 @@ def start_wrapper():
         "-p", f"{ACCOUNT_PORT}:{ACCOUNT_PORT}",
         "--entrypoint", "/bin/sh",
         WRAPPER_IMAGE,
-        "-c", "apt-get update -qq 2>/dev/null; apt-get install -y -qq strace tzdata 2>/dev/null; mkdir -p /app/rootfs/system/usr/share/zoneinfo /app/rootfs/etc; cp /usr/share/zoneinfo/tzdata.zi /app/rootfs/system/usr/share/zoneinfo/tzdata; cp /etc/hosts /app/rootfs/etc/hosts; cp /etc/resolv.conf /app/rootfs/etc/resolv.conf; export ANDROID_ROOT=/app/rootfs/system; export ANDROID_DATA=/app/rootfs/data; exec strace -f /app/wrapper -H 0.0.0.0",
+        "-c", "mkdir -p /app/rootfs/system/usr/share/zoneinfo /app/rootfs/etc; cp /usr/share/zoneinfo/tzdata.zi /app/rootfs/system/usr/share/zoneinfo/tzdata; cp /etc/hosts /app/rootfs/etc/hosts; cp /etc/resolv.conf /app/rootfs/etc/resolv.conf; export ANDROID_ROOT=/app/rootfs/system; export ANDROID_DATA=/app/rootfs/data; exec strace -f /app/wrapper -H 0.0.0.0",
     )
     if code != 0:
         print(f"{E}[ERROR] Failed to start wrapper.{R}")
