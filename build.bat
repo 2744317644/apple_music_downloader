@@ -31,11 +31,8 @@ echo OK.
 echo.
 
 REM ---- Check pip packages ----
-echo [2/4] Checking Python packages...
-call :check_pkg customtkinter
-call :check_pkg Pillow
-call :check_pkg pyinstaller
-
+echo [2/4] Installing Python packages...
+python -m pip install -r "%ROOT%\requirements.txt" --quiet
 echo OK.
 echo.
 
@@ -123,14 +120,4 @@ if exist "%ROOT%\AppleMusicDownloader.spec" del "%ROOT%\AppleMusicDownloader.spe
 
 echo.
 pause
-exit /b
-
-:check_pkg
-python -c "import %~1" 2>nul
-if %ERRORLEVEL% neq 0 (
-    echo   Installing %~1...
-    python -m pip install %~1 --quiet
-) else (
-    echo   %~1: OK
-)
 exit /b
