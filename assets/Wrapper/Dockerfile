@@ -56,14 +56,6 @@ RUN if [[ ! -f /use_prebuild ]]; then \
 
 FROM --platform=${RUNTIME_PLATFORM} ${REGISTRY_MIRROR}/library/debian:13.2
 
-ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
-RUN if [ -n "${APT_MIRROR}" ]; then \
-        sed -i "s|http://deb.debian.org|http://${APT_MIRROR}|g; s|http://security.debian.org|http://${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
-    fi && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends strace tzdata ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 COPY --from=build /app/wrapper /app/wrapper
 COPY --from=build /app/rootfs /app/rootfs

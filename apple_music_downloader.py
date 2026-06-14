@@ -32,7 +32,6 @@ M3U8_PORT = 20020
 ACCOUNT_PORT = 30020
 
 REGISTRY_MIRROR = os.environ.get("REGISTRY_MIRROR", "docker.1ms.run")
-APT_MIRROR = os.environ.get("APT_MIRROR", "mirrors.tuna.tsinghua.edu.cn")
 HTTP_PROXY = os.environ.get("HTTP_PROXY", "")
 
 # ---- Downloader settings ----
@@ -122,7 +121,6 @@ def build_wrapper_image():
     print(f"{C}Building wrapper image from: {src}{R}")
     code = _live("docker", "build",
         "--build-arg", f"REGISTRY_MIRROR={REGISTRY_MIRROR}",
-        "--build-arg", f"APT_MIRROR={APT_MIRROR}",
         "--tag", WRAPPER_IMAGE, src)
     if code != 0:
         print(f"{E}[ERROR] Build failed.{R}")
