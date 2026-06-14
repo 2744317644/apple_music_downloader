@@ -1108,7 +1108,7 @@ class MainPage(AppPage):
             args = ["run", "--rm",
                     "-v", f"{DOWNLOAD_DIR}:/downloads",
                     "-v", f"{tmp_config}:/app/config.yaml",
-                    DL_IMAGE])
+                    DL_IMAGE]
             args.extend(arguments.split())
             proc = subprocess.Popen(["docker"] + args,
                                     stdout=subprocess.PIPE,

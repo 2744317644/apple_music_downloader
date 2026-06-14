@@ -345,7 +345,7 @@ def invoke_downloader(arguments, description):
         args = ["run", "--rm", "-it",
                 "-v", f"{DOWNLOAD_DIR}:/downloads",
                 "-v", f"{tmp_config}:/app/config.yaml",
-                DL_IMAGE])
+                DL_IMAGE]
         args.extend(arguments.split())
         code = _live("docker", *args)
         if code != 0:
