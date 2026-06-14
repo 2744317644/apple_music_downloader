@@ -12,29 +12,29 @@ import time
 
 if getattr(sys, 'frozen', False):
     SCRIPT_DIR = os.path.dirname(sys.executable)
+    DATA_DIR = sys._MEIPASS
 else:
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DOWNLOAD_DIR = os.path.join(SCRIPT_DIR, "downloads")
+    DATA_DIR = SCRIPT_DIR
+DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.yaml")
 
-# ---- Wrapper settings (edit if needed) ----
-# Set WRAPPER_SRC to the local directory containing wrapper's Dockerfile + binary
-WRAPPER_SRC = os.environ.get("WRAPPER_SRC", os.path.join(SCRIPT_DIR, "wrapper-release"))
-WRAPPER_IMAGE = "am-wrapper:latest"
-WRAPPER_NAME = "am-wrapper"
-WRAPPER_DATA_DIR = os.path.join(SCRIPT_DIR, "wrapper-data")
-WRAPPER_TAR = os.path.join(SCRIPT_DIR, "am-wrapper.tar")
+APP_DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "AppleMusicDownloader")
 
-REGISTRY_MIRROR = os.environ.get("REGISTRY_MIRROR", "dockerproxy.com")
-APT_MIRROR = os.environ.get("APT_MIRROR", "mirrors.tuna.tsinghua.edu.cn")
+WRAPPER_SRC = os.environ.get("WRAPPER_SRC", os.path.join(DATA_DIR, "assets", "Wrapper"))
+WRAPPER_IMAGE = "wrapper:local"
+WRAPPER_NAME = "am-wrapper"
+WRAPPER_DATA_DIR = os.path.join(APP_DATA_DIR, "wrapper-data")
 
 DECRYPT_PORT = 10020
 M3U8_PORT = 20020
 ACCOUNT_PORT = 30020
 
+REGISTRY_MIRROR = os.environ.get("REGISTRY_MIRROR", "docker.m.daocloud.io")
+
 # ---- Downloader settings ----
-DL_IMAGE = "ghcr.io/zhaarey/apple-music-downloader:latest"
-DL_TAR = os.path.join(SCRIPT_DIR, "am-downloader.tar")
+DL_SRC = os.environ.get("DL_SRC", os.path.join(DATA_DIR, "assets", "apple-music-downloader"))
+DL_IMAGE = "apple-music-downloader:local"
 
 # ---- ANSI colors ----
 R = "\033[0m"
@@ -87,40 +87,24 @@ def wrapper_running():
     return len(out) > 0
 
 
-def load_image(tar_path, image_name):
-    """Import Docker image from tar if not already present."""
-    if os.path.isfile(tar_path):
-        if not _run("docker", "images", "-q", image_name, silent=True):
-            print(f"{C}Importing image from {os.path.basename(tar_path)}...{R}")
-            code = _live("docker", "load", "-i", tar_path)
-            if code != 0:
-                print(f"{E}[ERROR] Failed to import {image_name}{R}")
-                return False
-            print(f"{G}[OK] {image_name} imported.{R}")
-    return True
-
-
 def build_wrapper_image():
     """Build wrapper Docker image from local source directory."""
     src = WRAPPER_SRC
     if not os.path.isdir(src):
         print(f"{E}[ERROR] Wrapper source not found: {src}{R}")
-        print(f"{Y}  Set the WRAPPER_SRC env var or drop the release folder as:{R}")
-        print(f"{Y}    {os.path.join(SCRIPT_DIR, 'wrapper-release')}{R}")
+        print(f"{Y}  Set the WRAPPER_SRC env var or ensure the folder exists:{R}")
+        print(f"{Y}    {os.path.join(SCRIPT_DIR, 'assets', 'Wrapper')}{R}")
         print(f"{Y}  The folder must contain: Dockerfile, wrapper (binary), rootfs/, entrypoint.sh{R}")
         return False
 
     dockerfile = os.path.join(src, "Dockerfile")
-    binary = os.path.join(src, "wrapper")
-    if not os.path.isfile(dockerfile) or not os.path.isfile(binary):
-        print(f"{E}[ERROR] {src} must contain Dockerfile AND the 'wrapper' binary.{R}")
+    if not os.path.isfile(dockerfile):
+        print(f"{E}[ERROR] {src} must contain Dockerfile.{R}")
         return False
 
     print(f"{C}Building wrapper image from: {src}{R}")
-    print(f"{Y}  (takes ~1 minute, mostly just copying the prebuilt binary){R}")
     code = _live("docker", "build",
         "--build-arg", f"REGISTRY_MIRROR={REGISTRY_MIRROR}",
-        "--build-arg", f"APT_MIRROR={APT_MIRROR}",
         "--tag", WRAPPER_IMAGE, src)
     if code != 0:
         print(f"{E}[ERROR] Build failed.{R}")
@@ -161,14 +145,17 @@ def wrapper_login():
 
     # Start login container in background
     _run("docker", "rm", "-f", f"{WRAPPER_NAME}-login", silent=True)
+    os.makedirs(WRAPPER_DATA_DIR, exist_ok=True)
     code = _live(
-        "docker", "run", "-d", "--rm",
+        "docker", "run", "-d",
         "--name", f"{WRAPPER_NAME}-login",
         "--privileged",
         "-v", f"{os.path.abspath(WRAPPER_DATA_DIR)}:/app/rootfs/data",
         "-e", f"USERNAME={username}",
         "-e", f"PASSWORD={password}",
+        "--entrypoint", "/bin/sh",
         WRAPPER_IMAGE,
+        "-c", "mkdir -p /app/rootfs/system/usr/share/zoneinfo /app/rootfs/etc; cp /usr/share/zoneinfo/tzdata.zi /app/rootfs/system/usr/share/zoneinfo/tzdata; cp /etc/hosts /app/rootfs/etc/hosts; cp /etc/resolv.conf /app/rootfs/etc/resolv.conf; export ANDROID_ROOT=/app/rootfs/system; export ANDROID_DATA=/app/rootfs/data; mkdir -p /app/rootfs/data/data/com.apple.android.music/files/mpl_db; exec /app/wrapper -L ${USERNAME}:${PASSWORD} -F -H 0.0.0.0",
     )
     if code != 0:
         print(f"{E}[ERROR] Failed to start login container.{R}")
@@ -179,25 +166,44 @@ def wrapper_login():
         os.path.abspath(WRAPPER_DATA_DIR),
         "data", "com.apple.android.music", "files", "mpl_db", "kvs.sqlitedb"
     )
+    fsi_file = os.path.join(
+        os.path.abspath(WRAPPER_DATA_DIR),
+        "data", "com.apple.android.music", "files", "fsi.pdat"
+    )
     waited = 0
     while not os.path.isfile(db_file) and waited < 60:
         time.sleep(2)
         waited += 2
 
-    # Show recent logs
+    # Show logs and exit status
     print()
+    exit_code = _run("docker", "inspect", "-f", "{{.State.ExitCode}}", f"{WRAPPER_NAME}-login", silent=True)
+    if exit_code:
+        print(f"{Y}[INFO] Login container exited with code: {exit_code}{R}")
     _live("docker", "logs", f"{WRAPPER_NAME}-login")
     print()
+
+    if os.path.isfile(db_file):
+        print(f"{G}[OK] Login successful. Credentials cached.{R}")
+        if not os.path.isfile(fsi_file):
+            print(f"{Y}[INFO] Waiting for FairPlay registration (up to 120s)...{R}")
+            waited = 0
+            while not os.path.isfile(fsi_file) and waited < 120:
+                time.sleep(2)
+                waited += 2
+            if os.path.isfile(fsi_file):
+                print(f"{G}[OK] FairPlay registered.{R}")
+            else:
+                print(f"{Y}[WARN] FairPlay not yet registered (will retry on first download).{R}")
+    else:
+        print(f"{E}[ERROR] Login may have failed. No credential database created.{R}")
 
     # Stop login container
     _run("docker", "rm", "-f", f"{WRAPPER_NAME}-login", silent=True)
 
     if os.path.isfile(db_file):
-        print(f"{G}[OK] Login successful. Credentials cached.{R}")
         return True
-    else:
-        print(f"{E}[ERROR] Login may have failed. No credential database created.{R}")
-        return False
+    return False
 
 
 def start_wrapper():
@@ -231,7 +237,9 @@ def start_wrapper():
         "-p", f"{DECRYPT_PORT}:{DECRYPT_PORT}",
         "-p", f"{M3U8_PORT}:{M3U8_PORT}",
         "-p", f"{ACCOUNT_PORT}:{ACCOUNT_PORT}",
+        "--entrypoint", "/bin/sh",
         WRAPPER_IMAGE,
+        "-c", "mkdir -p /app/rootfs/system/usr/share/zoneinfo /app/rootfs/etc; cp /usr/share/zoneinfo/tzdata.zi /app/rootfs/system/usr/share/zoneinfo/tzdata; cp /etc/hosts /app/rootfs/etc/hosts; cp /etc/resolv.conf /app/rootfs/etc/resolv.conf; export ANDROID_ROOT=/app/rootfs/system; export ANDROID_DATA=/app/rootfs/data; exec /app/wrapper -H 0.0.0.0",
     )
     if code != 0:
         print(f"{E}[ERROR] Failed to start wrapper.{R}")
@@ -257,14 +265,28 @@ def stop_wrapper():
 # PREREQUISITES
 # =====================================================================
 
-def pull_image(image_name):
-    """Pull Docker image from registry."""
-    print(f"{C}Pulling image {image_name}...{R}")
-    code = _live("docker", "pull", image_name)
-    if code != 0:
-        print(f"{E}[ERROR] Failed to pull {image_name}{R}")
+def build_downloader_image():
+    """Build downloader Docker image from local source directory."""
+    src = DL_SRC
+    if not os.path.isdir(src):
+        print(f"{E}[ERROR] Downloader source not found: {src}{R}")
+        print(f"{Y}  Set the DL_SRC env var or ensure the folder exists:{R}")
+        print(f"{Y}    {os.path.join(SCRIPT_DIR, 'assets', 'apple-music-downloader')}{R}")
         return False
-    print(f"{G}[OK] Image pulled: {image_name}{R}")
+
+    dockerfile = os.path.join(src, "Dockerfile")
+    if not os.path.isfile(dockerfile):
+        print(f"{E}[ERROR] {src} must contain Dockerfile.{R}")
+        return False
+
+    print(f"{C}Building downloader image from: {src}{R}")
+    code = _live("docker", "build",
+        "--build-arg", f"REGISTRY_MIRROR={REGISTRY_MIRROR}",
+        "--tag", DL_IMAGE, src)
+    if code != 0:
+        print(f"{E}[ERROR] Build failed.{R}")
+        return False
+    print(f"{G}[OK] Downloader image built: {DL_IMAGE}{R}")
     return True
 
 
@@ -273,8 +295,6 @@ def check_prerequisites():
         print(f"{E}[ERROR] Docker is not installed or not in PATH.{R}")
         sys.exit(1)
 
-    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-
     if not os.path.exists(CONFIG_FILE):
         print(f"{Y}[WARN] config.yaml not found: {CONFIG_FILE}{R}")
         print(f"{Y}[WARN] Copy config.yaml.example to config.yaml and edit it first.{R}")
@@ -282,13 +302,11 @@ def check_prerequisites():
         if ans != "y":
             sys.exit(0)
 
-    load_image(DL_TAR, DL_IMAGE)
     if not _run("docker", "images", "-q", DL_IMAGE, silent=True):
-        if not pull_image(DL_IMAGE):
+        if not build_downloader_image():
             print(f"{E}[ERROR] Downloader image not available.{R}")
             sys.exit(1)
 
-    load_image(WRAPPER_TAR, WRAPPER_IMAGE)
     if not _run("docker", "images", "-q", WRAPPER_IMAGE, silent=True):
         if not build_wrapper_image():
             print(f"{E}[ERROR] Wrapper image not available.{R}")
@@ -308,8 +326,16 @@ def invoke_downloader(arguments, description):
     print(f"{M}>>> {description}{R}")
     print()
 
-    with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-        config_content = f.read()
+    try:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            config_content = f.read()
+    except FileNotFoundError:
+        config_path = os.path.join(DATA_DIR, "assets", "apple-music-downloader", "config.yaml.example")
+        if os.path.isfile(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_content = f.read()
+        else:
+            config_content = ""
     for folder_key in ['alac-save-folder', 'atmos-save-folder', 'aac-save-folder', 'mv-save-folder']:
         config_content = re.sub(
             rf'^({folder_key}:\s*)"?([^"\n]+)"?',
@@ -317,13 +343,14 @@ def invoke_downloader(arguments, description):
             config_content,
             flags=re.MULTILINE,
         )
-
-    tmp_config = os.path.join(tempfile.gettempdir(), 'am_config_temp.yaml')
-    with open(tmp_config, 'w', encoding='utf-8') as f:
+    config_content = config_content.replace("127.0.0.1:10020", "host.docker.internal:10020")
+    config_content = config_content.replace("127.0.0.1:20020", "host.docker.internal:20020")
+    fd, tmp_config = tempfile.mkstemp(suffix='.yaml', prefix='am_config_')
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
         f.write(config_content)
 
     try:
-        args = ["run", "--rm", "-it", "--network", "host",
+        args = ["run", "--rm", "-it",
                 "-v", f"{DOWNLOAD_DIR}:/downloads",
                 "-v", f"{tmp_config}:/app/config.yaml",
                 DL_IMAGE]
@@ -333,7 +360,7 @@ def invoke_downloader(arguments, description):
             print(f"\n{Y}[WARN] Docker exited with code {code}{R}")
     finally:
         os.remove(tmp_config)
-    print(f"\n{G}Output: {DOWNLOAD_DIR}{R}")
+        print(f"\n{G}Output: {SCRIPT_DIR}{R}")
     print()
     input("Press Enter to return to menu")
 
@@ -445,11 +472,14 @@ def menu_help():
     print(f"  1. Put wrapper release in: {WRAPPER_SRC}")
     print(f"  2. Edit config.yaml (media-user-token + storefront)")
     print(f"  3. Run: python am-dl.py\n")
-    print(f"{C}CONFIG (edit script header to change){R}")
-    print(f"  WRAPPER_SRC      = {WRAPPER_SRC}")
-    print(f"  WRAPPER_IMAGE    = {WRAPPER_IMAGE}")
-    print(f"  WRAPPER_DATA_DIR = {WRAPPER_DATA_DIR}")
-    print(f"  DOWNLOAD_DIR     = {DOWNLOAD_DIR}")
+    print(f"{C}CONFIG (set via env vars or edit script header){R}")
+    print(f"  REGISTRY_MIRROR   = {REGISTRY_MIRROR}")
+    print(f"  WRAPPER_SRC       = {WRAPPER_SRC}")
+    print(f"  WRAPPER_IMAGE     = {WRAPPER_IMAGE}")
+    print(f"  DL_SRC            = {DL_SRC}")
+    print(f"  DL_IMAGE          = {DL_IMAGE}")
+    print(f"  WRAPPER_DATA_DIR  = {WRAPPER_DATA_DIR}")
+    print(f"  DOWNLOAD_DIR      = {DOWNLOAD_DIR}")
     print()
     input("Press Enter to return")
 

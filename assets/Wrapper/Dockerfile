@@ -1,9 +1,8 @@
+ARG REGISTRY_MIRROR=docker.m.daocloud.io
 ARG BUILD_PLATFORM=linux/amd64
 ARG RUNTIME_PLATFORM=linux/amd64
-ARG REGISTRY_MIRROR=dockerproxy.com
-ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
 
-FROM --platform=${BUILD_PLATFORM} ${REGISTRY_MIRROR:+${REGISTRY_MIRROR}/}library/debian:13.2 AS build
+FROM --platform=${BUILD_PLATFORM} ${REGISTRY_MIRROR}/library/debian:13.2 AS build
 ARG TARGET_ARCH=amd64
 ARG NDK_VERSION=23
 
@@ -20,7 +19,6 @@ RUN if [[ -f ./wrapper ]]; then \
 RUN --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     if [[ ! -f /use_prebuild ]]; then \
-        sed -i "s/deb.debian.org/${APT_MIRROR}/g" /etc/apt/sources.list.d/debian.sources; \
         apt-get update; \
         apt-get install -y \
             build-essential \
@@ -56,7 +54,7 @@ RUN if [[ ! -f /use_prebuild ]]; then \
         exit 1; \
     fi
 
-FROM --platform=${RUNTIME_PLATFORM} ${REGISTRY_MIRROR:+${REGISTRY_MIRROR}/}library/debian:13.2
+FROM --platform=${RUNTIME_PLATFORM} ${REGISTRY_MIRROR}/library/debian:13.2
 
 WORKDIR /app
 COPY --from=build /app/wrapper /app/wrapper

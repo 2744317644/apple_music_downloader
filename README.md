@@ -1,8 +1,27 @@
 # Apple Music ALAC Downloader
 
-> 本项目由 https://github.com/zhaarey/apple-music-downloader 开发而来
-
 > Apple Music 无损 ALAC / 杜比全景声 Dolby Atmos / AAC 下载工具
+
+## 致谢
+
+本项目基于以下优秀的开源项目构建：
+
+- **[apple-music-downloader](https://github.com/zhaarey/apple-music-downloader)** — Apple Music ALAC / Atmos / AAC 下载核心，提供 Go 语言实现的完整下载引擎
+- **[wrapper](https://github.com/WorldObservationLog/wrapper)** — Apple Music Android DRM 解密服务，提供 FairPlay 解密与 M3U8 获取能力
+
+感谢以上项目的作者和贡献者们。
+
+## 本版本新增
+
+相比上游项目，本封装版本额外提供：
+
+- **图形界面** — Apple 风格 GUI，无需命令行操作
+- **免配置运行** — 无需 `config.yaml` 即可直接下载，内置完整默认配置
+- **国内网络适配** — 内置清华大学 APT 镜像源、DaoCloud Docker 镜像加速
+- **一键登录** — Apple ID 登录一次即可缓存凭据，后续启动无需重复输入
+- **自动环境配置** — 自动检测 Docker、构建镜像、启动服务，开箱即用
+- **单文件打包** — 支持 PyInstaller 打包为独立 EXE，无需安装 Python
+- **实时进度显示** — 下载进度原地刷新，日志持久化保存
 
 ## 功能特性
 
@@ -10,26 +29,29 @@
 - 支持 Dolby Atmos 杜比全景声下载
 - 支持 AAC-LC / AAC / AAC-Binaural / AAC-Downmix 下载
 - 支持整张专辑、单曲、播放列表下载
-- 支持交互式选曲下载
-- 支持搜索（歌曲/专辑/艺人）
-- 支持下载艺人全部专辑
+- 支持交互式选曲下载（终端版）
+- 支持搜索歌曲/专辑/艺人（终端版）
+- 支持下载艺人全部专辑（终端版）
 - 支持歌词下载（LRC / TTML）
 - 支持封面嵌入、动画封面下载
 - 支持下载后格式转换（FLAC / MP3 / Opus / WAV）
 - 自定义文件名和文件夹命名
+- **GUI 图形界面**（Apple 风格设计）
 
 ## 环境要求
 
 - **Python 3.7+**
 - **Docker**（必须安装且可正常运行）
 
+### GUI 版本额外依赖
+
+```bash
+pip install -r requirements.txt
+```
+
 ## 快速开始
 
 ### 1. 配置
-
-```bash
-copy config.yaml.example config.yaml
-```
 
 编辑 `config.yaml`，填写以下必要信息：
 
@@ -37,65 +59,69 @@ copy config.yaml.example config.yaml
 - `storefront`: 你的账号所属区域代码（如 `cn`、`us`、`jp`）
 - `alac-max`: ALAC 最大采样率，默认 192000
 
-### 2. 准备 Wrapper
+### 2. 运行
 
-将 wrapper 发行版文件夹放置为 `wrapper-release/`，该文件夹需包含：
-
-- `Dockerfile`
-- `wrapper`（二进制文件）
-- `rootfs/`
-- `entrypoint.sh`
-
-也可通过环境变量指定路径：
-
-```bash
-$env:WRAPPER_SRC = "你的wrapper路径"
-```
-
-### 3. 运行
-
+**终端版本**：
 ```bash
 python apple_music_downloader.py
 ```
 
+**GUI 版本**：
+```bash
+python apple_music_downloader_gui.py
+```
+
 首次运行会自动：
-- 从 `ghcr.io/zhaarey/apple-music-downloader:latest` 拉取下载器镜像
-- 从 `wrapper-release/` 构建 Wrapper 镜像
-- 引导完成 Apple Music 登录（凭据缓存到 `wrapper-data/`）
+- 构建 Wrapper 和 Downloader Docker 镜像
+- 引导完成 Apple Music 登录
+- 登录凭据自动缓存，后续无需重复
+
+### 3. 下载文件在哪
+
+| 下载模式 | 保存位置 |
+|----------|----------|
+| ALAC | `Downloads\AM-DL downloads\` |
+| 杜比全景声 | `Downloads\AM-DL-Atmos downloads\` |
+| AAC | `Downloads\AM-DL-AAC downloads\` |
+| MV | `Downloads\AM-DL-MV downloads\` |
+
+> 保存路径可通过 `config.yaml` 中的 `alac-save-folder` 等字段自定义。GUI 底部状态栏也会显示输出路径，点击文件夹图标可直接打开。
+
+### 4. 打包为 EXE
+
+```bash
+build.bat
+```
+
+生成 `AppleMusicDownloader.exe`。
 
 ## 镜像说明
 
 | 组件 | 来源 | 说明 |
 |------|------|------|
-| am-downloader | `ghcr.io/zhaarey/apple-music-downloader:latest` | 自动 `docker pull` 拉取 |
-| am-wrapper | `wrapper-release/` 本地构建 | 自动 `docker build` 构建 |
+| wrapper | `assets/Wrapper/` | 本地构建，Dockerfile + wrapper 二进制已打包进 exe |
+| downloader | `assets/apple-music-downloader/` | 本地构建，Go 源码 + Dockerfile 已打包进 exe |
 
-> 如已导出 `.tar` 镜像文件，将 `am-downloader.tar` / `am-wrapper.tar` 放在项目根目录，程序会优先从 tar 导入。
+## GUI 使用说明
 
-### 镜像加速（国内用户）
+GUI 支持浅色/深色主题切换。
 
-构建 Wrapper 时，默认使用国内镜像加速：
+| 组件 | 功能 |
+|------|------|
+| 模式选择 | 专辑 / 单曲 / 播放列表 / 杜比全景声 / AAC |
+| URL 输入框 | 粘贴 Apple Music 链接，右键粘贴，下载后自动清除 |
+| Download 按钮 | 开始下载 |
+| 清除按钮 | 手动清空 URL |
+| 输出日志 | 实时显示下载进度，进度行原地刷新 |
+| Clear 按钮 | 清空日志 |
 
-| 环境变量 | 默认值 | 说明 |
-|------|------|------|
-| `REGISTRY_MIRROR` | `dockerproxy.com` | Docker Hub 镜像代理 |
-| `APT_MIRROR` | `mirrors.tuna.tsinghua.edu.cn` | Debian APT 镜像（清华源） |
-
-如需更换镜像源：
-
-```bash
-$env:REGISTRY_MIRROR = "docker.1ms.run"
-$env:APT_MIRROR = "mirrors.ustc.edu.cn"
-python apple_music_downloader.py
-```
-
-## 菜单说明
+## 终端菜单说明
 
 | 选项 | 功能 |
 |------|------|
 | `1` | 下载专辑 |
 | `2` | 下载单曲 |
-| `3` | 交互式选曲（可选择专辑/播放列表中的特定曲目） |
+| `3` | 交互式选曲 |
 | `4` | 下载播放列表 |
 | `5` | Dolby Atmos 模式 |
 | `6` | AAC 模式 |
@@ -103,13 +129,12 @@ python apple_music_downloader.py
 | `8` | 搜索（歌曲/专辑/艺人） |
 | `9` | 下载艺人全部专辑 |
 | `0` | 自定义命令 |
-| `S` | 查看 Wrapper 运行状态 |
 | `H` | 帮助信息 |
 | `Q` | 退出 |
 
 ## 配置说明
 
-完整配置项请参考 `config.yaml.example`，常用配置：
+完整配置项请参考 `config.yaml`，常用配置：
 
 | 配置项 | 说明 |
 |--------|------|
@@ -132,47 +157,59 @@ python apple_music_downloader.py
 - 专辑文件夹：`{AlbumId}` `{AlbumName}` `{ArtistName}` `{ReleaseDate}` `{ReleaseYear}` `{UPC}` `{Copyright}` `{Quality}` `{Codec}` `{Tag}` `{RecordLabel}`
 - 单曲文件：`{SongId}` `{SongNumer}` `{SongName}` `{DiscNumber}` `{TrackNumber}` `{Quality}` `{Codec}` `{Tag}`
 
-## 端口说明
-
-Wrapper 服务默认占用以下端口：
-
-| 端口 | 用途 |
-|------|------|
-| `10020` | 解密 M3U8 |
-| `20020` | 获取 M3U8 |
-| `30020` | 账号服务 |
-
 ## 项目结构
 
 ```
 .
-├── apple_music_downloader.py   # 主程序入口（终端交互菜单）
-├── config.yaml                 # 配置文件
-├── config.yaml.example         # 配置文件模板
-├── wrapper-release/            # Wrapper 构建目录（需自行准备）
-│   ├── Dockerfile
-│   ├── compose.yaml
-│   ├── entrypoint.sh
-│   ├── wrapper
-│   └── rootfs/
-├── wrapper-data/               # Wrapper 数据目录（登录凭据缓存，自动创建）
-└── downloads/                  # 下载输出目录（自动创建）
+├── apple_music_downloader.py      # 终端版入口
+├── apple_music_downloader_gui.py  # GUI 版入口
+├── build.bat                      # 打包脚本
+├── config.yaml                    # 配置文件
+├── requirements.txt               # Python 依赖
+├── assets/
+│   ├── app_icon.ico                       # 应用图标
+│   ├── Wrapper/                           # Wrapper 源码（Dockerfile + 二进制）
+│   └── apple-music-downloader/            # Downloader 源码（Go + Dockerfile）
+└── AppleMusicDownloader.exe       # 打包产物（可选）
 ```
 
-> 可选：`am-downloader.tar` / `am-wrapper.tar` 可放在根目录作为离线镜像。
+### 运行时数据
+
+登录凭据和运行日志存放在用户目录下，exe 同级保持干净：
+
+| 数据 | 路径 |
+|------|------|
+| 登录凭据 | `%LOCALAPPDATA%\AppleMusicDownloader\wrapper-data\` |
+| 运行日志 | `%LOCALAPPDATA%\AppleMusicDownloader\log\` |
+| 下载文件 | 用户 Downloads 文件夹 |
+| 配置文件 | exe 同级 `config.yaml` |
 
 ## 常见问题
 
 **Q: 提示 Docker 未安装？**
-安装 Docker Desktop 并确保 `docker` 命令可在终端中使用。
+安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/) 并确保 `docker` 命令可在终端中使用。
 
-**Q: 下载失败？**
-- 检查 `config.yaml` 中 `media-user-token` 和 `storefront` 是否正确
-- 确认 Wrapper 容器正常运行（按 `S` 查看状态）
-- 检查网络连接
+**Q: GUI 启动闪退或无响应？**
+- 确保 Docker Desktop 已启动且状态正常
+- 首次启动需要构建镜像，可能耗时 1-3 分钟，请耐心等待
+- 查看日志：`%LOCALAPPDATA%\AppleMusicDownloader\log\`
 
-**Q: Wrapper 构建时拉取 Debian 镜像很慢？**
-设置 `REGISTRY_MIRROR` 环境变量切换镜像代理，详见「镜像加速」章节。
+**Q: 提示 "Failed to get token"？**
+- 检查网络是否能访问 `music.apple.com`
+- 在浏览器登录 Apple Music 后，手动复制 `authorization-token` 填入 `config.yaml`
+
+**Q: 登录失败？**
+- 确认 Apple ID 和密码正确（可能需要使用 App 专用密码）
+- 查看 Wrapper 容器日志排查具体原因
+- 删除 `%LOCALAPPDATA%\AppleMusicDownloader\wrapper-data\` 重试
+
+**Q: 下载后没有文件？**
+- 检查配置中的保存路径是否正确，确保路径有写入权限
+- 确认下载日志中显示 "Completed" 而非 "Warnings" 或 "Errors"
 
 **Q: 歌词获取失败？**
-确认 `storefront` 与你 Apple Music 账号的区域一致。
+确认 `storefront` 与你 Apple Music 账号的区域一致（如中国区填 `cn`）。
+
+**Q: 打包 EXE 失败？**
+- 确保已关闭正在运行的 `AppleMusicDownloader.exe`
+- 确保 `requirements.txt` 中的依赖已安装：`pip install -r requirements.txt`
