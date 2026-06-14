@@ -1,4 +1,4 @@
-ARG REGISTRY_MIRROR=docker.m.daocloud.io
+ARG REGISTRY_MIRROR=docker.1ms.run
 ARG GOVERSION=1.25.5
 
 FROM --platform=$BUILDPLATFORM ${REGISTRY_MIRROR}/library/golang:${GOVERSION}-alpine AS builder
