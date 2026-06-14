@@ -1112,9 +1112,11 @@ class MainPage(AppPage):
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 config_content = f.read()
         except FileNotFoundError:
-            self.log("[ERROR] config.yaml not found")
-            self.after(0, lambda: self._go_btn.configure(state="normal", text="Download"))
-            return
+            self.log("[WARN] config.yaml not found, using defaults")
+            config_content = (
+                "decrypt-m3u8-port: host.docker.internal:10020\n"
+                "get-m3u8-port: host.docker.internal:20020\n"
+            )
 
         for folder_key in ['alac-save-folder', 'atmos-save-folder', 'aac-save-folder', 'mv-save-folder']:
             config_content = re.sub(
