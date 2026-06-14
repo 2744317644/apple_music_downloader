@@ -170,9 +170,8 @@ func checkUrlArtist(url string) (string, string) {
 		return matches[0][1], matches[0][2]
 	}
 }
-func getUrlSong(songUrl string, token string) (string, error) {
-	storefront, songId := checkUrlSong(songUrl)
-	manifest, err := ampapi.GetSongResp(storefront, songId, Config.Language, token, Config.MediaUserToken)
+
+func getUrlArtistName(artistUrl string, token string) (string, string, error) {
 	storefront, artistId := checkUrlArtist(artistUrl)
 	req, err := http.NewRequest("GET", fmt.Sprintf("https://amp-api.music.apple.com/v1/catalog/%s/artists/%s", storefront, artistId), nil)
 	if err != nil {
@@ -198,6 +197,14 @@ func getUrlSong(songUrl string, token string) (string, error) {
 		return "", "", err
 	}
 	return obj.Data[0].Attributes.Name, obj.Data[0].ID, nil
+}
+func getUrlSong(songUrl string, token string) (string, error) {
+	storefront, songId := checkUrlSong(songUrl)
+	_, err := ampapi.GetSongResp(storefront, songId, Config.Language, token, Config.MediaUserToken)
+	if err != nil {
+		return "", err
+	}
+	return songId, nil
 }
 
 func checkArtist(artistUrl string, token string, relationship string) ([]string, error) {
@@ -2685,6 +2692,11 @@ func extractVideo(c string) (string, error) {
 func ripSong(songId string, token string, storefront string, mediaUserToken string) error {
 	// Get song info to find album ID
 	manifest, err := ampapi.GetSongResp(storefront, songId, Config.Language, token, mediaUserToken)
+	if err != nil {
+		fmt.Println("Failed to get song response.")
+		return err
+	}
+	songData := manifest.Data[0]
 	albumId := songData.Relationships.Albums.Data[0].ID
 
 	// Use album approach but only download the specific song
