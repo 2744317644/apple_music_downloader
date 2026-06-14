@@ -11,6 +11,18 @@
 
 感谢以上项目的作者和贡献者们。
 
+## 本版本新增
+
+相比上游项目，本封装版本额外提供：
+
+- **图形界面** — Apple 风格 GUI，无需命令行操作
+- **免配置运行** — 无需 `config.yaml` 即可直接下载，内置完整默认配置
+- **国内网络适配** — 内置清华大学 APT 镜像源、DaoCloud Docker 镜像加速
+- **一键登录** — Apple ID 登录一次即可缓存凭据，后续启动无需重复输入
+- **自动环境配置** — 自动检测 Docker、构建镜像、启动服务，开箱即用
+- **单文件打包** — 支持 PyInstaller 打包为独立 EXE，无需安装 Python
+- **实时进度显示** — 下载进度原地刷新，日志持久化保存
+
 ## 功能特性
 
 - 支持 ALAC 无损下载（最高 192kHz）
@@ -60,11 +72,22 @@ python apple_music_downloader_gui.py
 ```
 
 首次运行会自动：
-- 导入或构建 Wrapper 镜像（优先从 `am-wrapper.tar` 导入，否则用 `assets/wrapper-release/` 构建）
-- 拉取 Downloader 镜像（优先从 `am-downloader.tar` 导入，否则从 GitHub 拉取）
+- 构建 Wrapper 和 Downloader Docker 镜像
 - 引导完成 Apple Music 登录
+- 登录凭据自动缓存，后续无需重复
 
-### 3. 打包为 EXE
+### 3. 下载文件在哪
+
+| 下载模式 | 保存位置 |
+|----------|----------|
+| ALAC | `Downloads\AM-DL downloads\` |
+| 杜比全景声 | `Downloads\AM-DL-Atmos downloads\` |
+| AAC | `Downloads\AM-DL-AAC downloads\` |
+| MV | `Downloads\AM-DL-MV downloads\` |
+
+> 保存路径可通过 `config.yaml` 中的 `alac-save-folder` 等字段自定义。GUI 底部状态栏也会显示输出路径，点击文件夹图标可直接打开。
+
+### 4. 打包为 EXE
 
 ```bash
 build.bat
@@ -76,10 +99,8 @@ build.bat
 
 | 组件 | 来源 | 说明 |
 |------|------|------|
-| am-wrapper | `assets/wrapper-release/` | 本地构建，无需网络。Dockerfile + wrapper 二进制已打包进 exe |
-| am-downloader | `ghcr.io/zhaarey/apple-music-downloader:latest` | 自动 `docker pull` 拉取 |
-
-> 如已导出 `.tar` 镜像文件，将 `am-wrapper.tar` / `am-downloader.tar` 放在 exe 同级目录，程序会优先从 tar 导入，跳过构建/拉取。
+| wrapper | `assets/Wrapper/` | 本地构建，Dockerfile + wrapper 二进制已打包进 exe |
+| downloader | `assets/apple-music-downloader/` | 本地构建，Go 源码 + Dockerfile 已打包进 exe |
 
 ## GUI 使用说明
 
@@ -146,12 +167,11 @@ GUI 支持浅色/深色主题切换。
 ├── config.yaml                    # 配置文件
 ├── requirements.txt               # Python 依赖
 ├── assets/
-│   ├── app_icon.ico               # 应用图标
-│   └── wrapper-release/           # Wrapper 源码（Dockerfile + 二进制）
+│   ├── app_icon.ico                       # 应用图标
+│   ├── Wrapper/                           # Wrapper 源码（Dockerfile + 二进制）
+│   └── apple-music-downloader/            # Downloader 源码（Go + Dockerfile）
 └── AppleMusicDownloader.exe       # 打包产物（可选）
 ```
-
-> 可选：`am-wrapper.tar` / `am-downloader.tar` 可放在项目根目录作为离线镜像，程序优先从 tar 导入。
 
 ### 运行时数据
 
@@ -167,14 +187,29 @@ GUI 支持浅色/深色主题切换。
 ## 常见问题
 
 **Q: 提示 Docker 未安装？**
-安装 Docker Desktop 并确保 `docker` 命令可在终端中使用。
+安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/) 并确保 `docker` 命令可在终端中使用。
 
-**Q: 下载失败？**
-- 检查 `config.yaml` 中 `media-user-token` 和 `storefront` 是否正确
-- 检查网络连接
+**Q: GUI 启动闪退或无响应？**
+- 确保 Docker Desktop 已启动且状态正常
+- 首次启动需要构建镜像，可能耗时 1-3 分钟，请耐心等待
+- 查看日志：`%LOCALAPPDATA%\AppleMusicDownloader\log\`
+
+**Q: 提示 "Failed to get token"？**
+- 检查网络是否能访问 `music.apple.com`
+- 在浏览器登录 Apple Music 后，手动复制 `authorization-token` 填入 `config.yaml`
+
+**Q: 登录失败？**
+- 确认 Apple ID 和密码正确（可能需要使用 App 专用密码）
+- 查看 Wrapper 容器日志排查具体原因
+- 删除 `%LOCALAPPDATA%\AppleMusicDownloader\wrapper-data\` 重试
+
+**Q: 下载后没有文件？**
+- 检查配置中的保存路径是否正确，确保路径有写入权限
+- 确认下载日志中显示 "Completed" 而非 "Warnings" 或 "Errors"
 
 **Q: 歌词获取失败？**
-确认 `storefront` 与你 Apple Music 账号的区域一致。
+确认 `storefront` 与你 Apple Music 账号的区域一致（如中国区填 `cn`）。
 
-**Q: GUI 启动闪退？**
-确保 Docker 已安装且正常运行。
+**Q: 打包 EXE 失败？**
+- 确保已关闭正在运行的 `AppleMusicDownloader.exe`
+- 确保 `requirements.txt` 中的依赖已安装：`pip install -r requirements.txt`
