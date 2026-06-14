@@ -11,7 +11,7 @@ echo ========================================
 echo.
 
 REM ---- Check Python ----
-echo [1/3] Checking Python...
+echo [1/4] Checking Python...
 where python >nul 2>&1
 if %ERRORLEVEL% neq 0 (
     echo Python not found. Attempting to install via winget...
@@ -31,26 +31,31 @@ echo OK.
 echo.
 
 REM ---- Check pip packages ----
-echo [2/3] Checking Python packages...
-for /f "tokens=*" %%p in ('python -c "import customtkinter; print('OK')" 2^>nul') do set "CTK=%%p"
-for /f "tokens=*" %%p in ('python -c "from PIL import Image; print('OK')" 2^>nul') do set "PIL=%%p"
+echo [2/4] Checking Python packages...
+call :check_pkg customtkinter
+call :check_pkg Pillow
+call :check_pkg pyinstaller
 
-if not "%CTK%"=="OK" (
-    echo Installing customtkinter...
-    python -m pip install customtkinter --quiet
-)
-if not "%PIL%"=="OK" (
-    echo Installing Pillow...
-    python -m pip install Pillow --quiet
-)
+echo OK.
+echo.
 
-echo customtkinter: %CTK%
-echo Pillow: %PIL%
+REM ---- Verify assets ----
+echo [3/4] Checking assets...
+if not exist "%ROOT%\assets\Wrapper\Dockerfile" (
+    echo [ERROR] assets\Wrapper\Dockerfile not found!
+    pause
+    exit /b 1
+)
+if not exist "%ROOT%\assets\apple-music-downloader\Dockerfile" (
+    echo [ERROR] assets\apple-music-downloader\Dockerfile not found!
+    pause
+    exit /b 1
+)
 echo OK.
 echo.
 
 REM ---- Build ----
-echo [3/3] Building AppleMusicDownloader.exe...
+echo [4/4] Building AppleMusicDownloader.exe...
 
 set "SPEC=%ROOT%\AppleMusicDownloader.spec"
 (
@@ -59,7 +64,11 @@ echo a = Analysis(
 echo     [r'%ROOT%\apple_music_downloader_gui.py'],
 echo     pathex=[],
 echo     binaries=[],
-echo     datas=[(r'%ROOT%\assets\wrapper-release',r'assets\wrapper-release'^)],
+echo     datas=[
+echo         (r'%ROOT%\assets\Wrapper', r'assets\Wrapper'),
+echo         (r'%ROOT%\assets\apple-music-downloader', r'assets\apple-music-downloader'),
+echo         (r'%ROOT%\assets\app_icon.ico', r'assets\app_icon.ico'),
+echo     ],
 echo     hiddenimports=['PIL._tkinter_finder'],
 echo     hookspath=[],
 echo     hooksconfig={},
@@ -114,3 +123,14 @@ if exist "%ROOT%\AppleMusicDownloader.spec" del "%ROOT%\AppleMusicDownloader.spe
 
 echo.
 pause
+exit /b
+
+:check_pkg
+for /f "tokens=*" %%p in ('python -c "import %~1; print('OK')" 2^>nul') do set "RES=%%p"
+if not "%RES%"=="OK" (
+    echo Installing %~1...
+    python -m pip install %~1 --quiet
+)
+echo   %~1: OK
+set "RES="
+exit /b
