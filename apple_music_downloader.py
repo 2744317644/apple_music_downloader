@@ -31,6 +31,8 @@ DECRYPT_PORT = 10020
 M3U8_PORT = 20020
 ACCOUNT_PORT = 30020
 
+REGISTRY_MIRROR = os.environ.get("REGISTRY_MIRROR", "docker.io")
+
 # ---- Downloader settings ----
 DL_SRC = os.environ.get("DL_SRC", os.path.join(DATA_DIR, "assets", "apple-music-downloader"))
 DL_IMAGE = "apple-music-downloader:local"
@@ -116,7 +118,9 @@ def build_wrapper_image():
         return False
 
     print(f"{C}Building wrapper image from: {src}{R}")
-    code = _live("docker", "build", "--tag", WRAPPER_IMAGE, src)
+    code = _live("docker", "build",
+        "--build-arg", f"REGISTRY_MIRROR={REGISTRY_MIRROR}",
+        "--tag", WRAPPER_IMAGE, src)
     if code != 0:
         print(f"{E}[ERROR] Build failed.{R}")
         return False
@@ -290,7 +294,9 @@ def build_downloader_image():
         return False
 
     print(f"{C}Building downloader image from: {src}{R}")
-    code = _live("docker", "build", "--tag", DL_IMAGE, src)
+    code = _live("docker", "build",
+        "--build-arg", f"REGISTRY_MIRROR={REGISTRY_MIRROR}",
+        "--tag", DL_IMAGE, src)
     if code != 0:
         print(f"{E}[ERROR] Build failed.{R}")
         return False
@@ -474,11 +480,14 @@ def menu_help():
     print(f"  1. Put wrapper release in: {WRAPPER_SRC}")
     print(f"  2. Edit config.yaml (media-user-token + storefront)")
     print(f"  3. Run: python am-dl.py\n")
-    print(f"{C}CONFIG (edit script header to change){R}")
-    print(f"  WRAPPER_SRC      = {WRAPPER_SRC}")
-    print(f"  WRAPPER_IMAGE    = {WRAPPER_IMAGE}")
-    print(f"  WRAPPER_DATA_DIR = {WRAPPER_DATA_DIR}")
-    print(f"  DOWNLOAD_DIR     = {DOWNLOAD_DIR}")
+    print(f"{C}CONFIG (set via env vars or edit script header){R}")
+    print(f"  REGISTRY_MIRROR   = {REGISTRY_MIRROR}")
+    print(f"  WRAPPER_SRC       = {WRAPPER_SRC}")
+    print(f"  WRAPPER_IMAGE     = {WRAPPER_IMAGE}")
+    print(f"  DL_SRC            = {DL_SRC}")
+    print(f"  DL_IMAGE          = {DL_IMAGE}")
+    print(f"  WRAPPER_DATA_DIR  = {WRAPPER_DATA_DIR}")
+    print(f"  DOWNLOAD_DIR      = {DOWNLOAD_DIR}")
     print()
     input("Press Enter to return")
 
