@@ -902,7 +902,7 @@ class TabbedContainer(AppPage):
         space = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         space.pack(side="bottom", fill="x", padx=8, pady=6)
 
-        lang_label = "English" if self.app.lang == "zh" else "中文"
+        lang_label = "中文" if self.app.lang == "zh" else "English"
         self._lang_btn = ctk.CTkButton(space, text=lang_label, anchor="center",
                                        fg_color=c["input_bg"], hover_color=c["divider"],
                                        text_color=c["text"],
@@ -953,7 +953,7 @@ class TabbedContainer(AppPage):
     def _toggle_lang(self):
         new_lang = "en" if self.app.lang == "zh" else "zh"
         self.app.set_language(new_lang)
-        self._lang_btn.configure(text="English" if new_lang == "zh" else "中文")
+        self._lang_btn.configure(text="中文" if new_lang == "zh" else "English")
 
     def refresh_language(self):
         super().refresh_language()
