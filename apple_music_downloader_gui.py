@@ -492,6 +492,7 @@ class AppleMusicApp(ctk.CTk):
 
         self.show_frame("SetupPage")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        os.makedirs(APP_DATA_DIR, exist_ok=True)
         get_config_path()
 
     def t(self, key, **fmt):

@@ -311,6 +311,7 @@ def check_prerequisites():
         print(f"{E}[ERROR] Docker is not installed or not in PATH.{R}")
         sys.exit(1)
 
+    os.makedirs(APP_DATA_DIR, exist_ok=True)
     config_path = get_config_path()
     if not config_path:
         print(f"{Y}[WARN] 未找到配置文件示例 (config.yaml.example)，请手动创建 {CONFIG_FILE}{R}")
