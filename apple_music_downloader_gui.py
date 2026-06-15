@@ -878,16 +878,9 @@ class TabbedContainer(AppPage):
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
 
-        logo_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        logo_frame.pack(fill="x", padx=12, pady=(16, 12))
-        lbl = ctk.CTkLabel(logo_frame, text=self.t("brand"),
-                           font=ctk.CTkFont(family=f, size=13, weight="bold"),
-                           text_color=c["text"]); lbl.pack(anchor="w"); self._reg(lbl, "brand")
-        lbl = ctk.CTkLabel(logo_frame, text=self.t("product"),
-                           font=ctk.CTkFont(family=f, size=10),
-                           text_color=c["text_secondary"]); lbl.pack(anchor="w"); self._reg(lbl, "product")
-
         self.tab_btns = {}
+        sep = ctk.CTkFrame(self.sidebar, height=12, fg_color="transparent")
+        sep.pack(fill="x")
         self._tab_keys = [("download", "tab_download"), ("status", "tab_status"), ("config", "tab_config")]
         for key, i18n_key in self._tab_keys:
             btn = ctk.CTkButton(self.sidebar, text=self.t(i18n_key), anchor="w",
