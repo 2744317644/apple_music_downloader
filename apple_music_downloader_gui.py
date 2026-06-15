@@ -51,6 +51,7 @@ def get_config_path():
         if os.path.isfile(CONFIG_EXAMPLE):
             os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
             shutil.copy(CONFIG_EXAMPLE, CONFIG_FILE)
+            session_log.write(f"[INFO] 默认配置已复制到: {CONFIG_FILE}")
         else:
             return None
     return CONFIG_FILE
@@ -491,6 +492,7 @@ class AppleMusicApp(ctk.CTk):
 
         self.show_frame("SetupPage")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        get_config_path()
 
     def t(self, key, **fmt):
         value = I18N.get(self.lang, {}).get(key, key)
