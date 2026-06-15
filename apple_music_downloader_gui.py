@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import time
+import shutil
 import queue
 import atexit
 import tempfile
@@ -23,7 +24,9 @@ else:
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     DATA_DIR = SCRIPT_DIR
 DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
-CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.yaml")
+CONFIG_FILE = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "AppleMusicDownloader", "config.yaml")
+CONFIG_EXAMPLE = os.path.join(DATA_DIR, "config.yaml.example")
+CONFIG_EXAMPLE_ALT = os.path.join(DATA_DIR, "assets", "apple-music-downloader", "config.yaml.example")
 
 APP_DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "AppleMusicDownloader")
 
@@ -42,7 +45,37 @@ REGISTRY_MIRROR = os.environ.get("REGISTRY_MIRROR", "docker.m.daocloud.io")
 DL_SRC = os.environ.get("DL_SRC", os.path.join(DATA_DIR, "assets", "apple-music-downloader"))
 DL_IMAGE = "apple-music-downloader:local"
 
-FONT_FAMILY = None
+
+def get_config_path():
+    """返回配置文件路径：若不存在则从示例复制"""
+    os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+    if not os.path.isfile(CONFIG_FILE):
+        example = None
+        if os.path.isfile(CONFIG_EXAMPLE):
+            example = CONFIG_EXAMPLE
+        elif os.path.isfile(CONFIG_EXAMPLE_ALT):
+            example = CONFIG_EXAMPLE_ALT
+        if example:
+            shutil.copy(example, CONFIG_FILE)
+            session_log.write(f"[INFO] 默认配置已复制到: {CONFIG_FILE}")
+        else:
+            session_log.write(f"[WARN] 未找到示例: {CONFIG_EXAMPLE}")
+    if not os.path.isfile(CONFIG_FILE):
+        session_log.write(f"[WARN] 配置文件不存在: {CONFIG_FILE}")
+        return None
+    return CONFIG_FILE
+
+
+def load_config_content():
+    """加载配置文件内容"""
+    path = get_config_path()
+    if path:
+        with open(path, 'r', encoding='utf-8') as f:
+            return f.read()
+    return ""
+
+
+FONT_FAMILY = "Microsoft YaHei"
 MONO_FAMILY = "Consolas"
 APP_ICON = os.path.join(DATA_DIR, "assets", "app_icon.ico")
 
@@ -98,6 +131,141 @@ APPLE_LIGHT = {
     "divider": "#E5E5EA",
     "input_bg": "#F2F2F7",
 }
+
+I18N = {
+    "zh": {
+        "app_title": "Apple Music Downloader",
+        "brand": "Apple Music",
+        "product": "ALAC Downloader",
+        "checking": "正在检测环境...",
+        "retry": "重试",
+        "start_docker": "启动 Docker",
+        "sign_in": "登录",
+        "tips_login": "登录一次即可缓存凭据，无需重复输入",
+        "apple_id": "Apple ID",
+        "password": "密码",
+        "placeholder_email": "example@icloud.com",
+        "placeholder_password": "输入密码",
+        "placeholder_url": "粘贴 Apple Music 链接...",
+        "download": "下载",
+        "running_btn": "运行中...",
+        "clear": "清除",
+        "output": "输出",
+        "wrapper": "Wrapper",
+        "running_status": "运行中 | {ports}",
+        "stopped": "已停止",
+        "ready": "就绪",
+        "output_to": "输出: {path}",
+        "tab_download": "下载",
+        "tab_status": "状态",
+        "tab_config": "配置",
+        "lang_switch": "English",
+        "config_title": "配置文件",
+        "reload": "重新加载",
+        "save": "保存",
+        "config_source": "来源: {path}",
+        "config_not_found": "未找到配置文件",
+        "config_saved": "已保存到: {path}",
+        "config_save_failed": "保存失败: {error}",
+        "status_title": "系统状态",
+        "status_refresh": "刷新",
+        "s_docker": "Docker",
+        "s_images": "镜像",
+        "s_wrapper": "Wrapper 容器",
+        "s_login": "登录",
+        "s_paths": "路径",
+        "docker_installed": "Docker 已安装",
+        "docker_running": "Docker 守护进程",
+        "wrapper_image": "Wrapper 镜像",
+        "dl_image": "下载器镜像",
+        "wrapper_container": "容器运行状态",
+        "wrapper_ports": "端口映射",
+        "login_cached": "凭据缓存",
+        "config_path_label": "配置文件",
+        "log_path_label": "日志目录",
+        "wrapper_data_path_label": "Wrapper 数据",
+        "not_installed": "未安装",
+        "running": "运行中",
+        "not_running": "未运行",
+        "not_built": "未构建",
+        "logged_in": "已登录",
+        "not_logged_in": "未登录",
+        "checking_status": "检测中...",
+        "format_label": "格式:",
+        "mode_album": "专辑",
+        "mode_song": "单曲",
+        "mode_playlist": "播放列表",
+        "mode_atmos": "杜比全景声",
+        "mode_aac": "AAC",
+    },
+    "en": {
+        "app_title": "Apple Music Downloader",
+        "brand": "Apple Music",
+        "product": "ALAC Downloader",
+        "checking": "Checking environment...",
+        "retry": "Retry",
+        "start_docker": "Start Docker",
+        "sign_in": "Sign In",
+        "tips_login": "Login once to cache credentials, no need to re-enter",
+        "apple_id": "Apple ID",
+        "password": "Password",
+        "placeholder_email": "example@icloud.com",
+        "placeholder_password": "Enter password",
+        "placeholder_url": "Paste Apple Music link...",
+        "download": "Download",
+        "running_btn": "Running...",
+        "clear": "Clear",
+        "output": "Output",
+        "wrapper": "Wrapper",
+        "running_status": "Running | {ports}",
+        "stopped": "Stopped",
+        "ready": "Ready",
+        "output_to": "Output: {path}",
+        "tab_download": "Download",
+        "tab_status": "Status",
+        "tab_config": "Config",
+        "lang_switch": "中文",
+        "config_title": "Configuration",
+        "reload": "Reload",
+        "save": "Save",
+        "config_source": "Source: {path}",
+        "config_not_found": "Config file not found",
+        "config_saved": "Saved to: {path}",
+        "config_save_failed": "Save failed: {error}",
+        "status_title": "System Status",
+        "status_refresh": "Refresh",
+        "s_docker": "Docker",
+        "s_images": "Images",
+        "s_wrapper": "Wrapper Container",
+        "s_login": "Login",
+        "s_paths": "Paths",
+        "docker_installed": "Docker Installed",
+        "docker_running": "Docker Daemon",
+        "wrapper_image": "Wrapper Image",
+        "dl_image": "Downloader Image",
+        "wrapper_container": "Container Status",
+        "wrapper_ports": "Port Mapping",
+        "login_cached": "Cached Credentials",
+        "config_path_label": "Config File",
+        "log_path_label": "Log Directory",
+        "wrapper_data_path_label": "Wrapper Data",
+        "not_installed": "Not Installed",
+        "running": "Running",
+        "not_running": "Not Running",
+        "not_built": "Not Built",
+        "logged_in": "Logged In",
+        "not_logged_in": "Not Logged In",
+        "checking_status": "Checking...",
+        "format_label": "Format:",
+        "mode_album": "Album",
+        "mode_song": "Song",
+        "mode_playlist": "Playlist",
+        "mode_atmos": "Dolby Atmos",
+        "mode_aac": "AAC",
+    },
+}
+
+DEFAULT_LANG = "zh"
 
 # Prevent subprocess console windows on Windows
 _SI = subprocess.STARTUPINFO()
@@ -316,6 +484,7 @@ class AppleMusicApp(ctk.CTk):
         ctk.set_default_color_theme("blue")
 
         self.colors = APPLE_LIGHT
+        self.lang = DEFAULT_LANG
         self._setup_theme()
 
         self.wrapper_ready = False
@@ -325,13 +494,30 @@ class AppleMusicApp(ctk.CTk):
         self.container.pack(fill="both", expand=True)
 
         self.frames = {}
-        for F in (SetupPage, LoginPage, MainPage):
+        for F in (SetupPage, LoginPage, TabbedContainer):
             frame = F(self.container, self)
             self.frames[F.__name__] = frame
             frame.place(relx=0, rely=0, relwidth=1, relheight=1)
 
         self.show_frame("SetupPage")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        os.makedirs(APP_DATA_DIR, exist_ok=True)
+        get_config_path()
+
+    def t(self, key, **fmt):
+        value = I18N.get(self.lang, {}).get(key, key)
+        if fmt:
+            value = value.format(**fmt)
+        return value
+
+    def set_language(self, lang):
+        if lang not in I18N:
+            return
+        self.lang = lang
+        self.title(self.t("app_title"))
+        for frame in self.frames.values():
+            if hasattr(frame, "refresh_language"):
+                frame.refresh_language()
 
     def _on_close(self):
         stop_wrapper()
@@ -353,9 +539,27 @@ class AppPage(ctk.CTkFrame):
     def __init__(self, parent, app):
         super().__init__(parent, fg_color="transparent")
         self.app = app
+        self._i18n_refs = []
 
     def c(self, key):
         return self.app.colors.get(key, "#000000")
+
+    def t(self, key, **fmt):
+        return self.app.t(key, **fmt)
+
+    def _reg(self, widget, key, attr="text"):
+        self._i18n_refs.append((widget, key, attr))
+
+    def refresh_language(self):
+        for widget, key, attr in self._i18n_refs:
+            try:
+                value = self.t(key)
+                if attr == "text":
+                    widget.configure(text=value)
+                elif attr == "placeholder":
+                    widget.configure(placeholder_text=value)
+            except Exception:
+                pass
 
 
 class SetupPage(AppPage):
@@ -372,15 +576,16 @@ class SetupPage(AppPage):
         container = ctk.CTkFrame(self, fg_color="transparent")
         container.pack(expand=True, fill="both", padx=40, pady=40)
 
-        ctk.CTkLabel(container, text="Apple Music",
-                     font=ctk.CTkFont(family=f, size=32, weight="bold"),
-                     text_color=c["text"]).pack(pady=(40, 0))
-        ctk.CTkLabel(container, text="ALAC Downloader",
-                     font=ctk.CTkFont(family=f, size=20),
-                     text_color=c["primary"]).pack()
-        ctk.CTkLabel(container, text="Checking environment...",
-                     font=ctk.CTkFont(family=f, size=14),
-                     text_color=c["text_secondary"]).pack(pady=(16, 8))
+        lbl = ctk.CTkLabel(container, text=self.t("brand"),
+                           font=ctk.CTkFont(family=f, size=32, weight="bold"),
+                           text_color=c["text"]); lbl.pack(pady=(40, 0)); self._reg(lbl, "brand")
+        lbl = ctk.CTkLabel(container, text=self.t("product"),
+                           font=ctk.CTkFont(family=f, size=20),
+                           text_color=c["primary"]); lbl.pack(); self._reg(lbl, "product")
+        self._checking_label = ctk.CTkLabel(container, text=self.t("checking"),
+                                            font=ctk.CTkFont(family=f, size=14),
+                                            text_color=c["text_secondary"])
+        self._checking_label.pack(pady=(16, 8)); self._reg(self._checking_label, "checking")
 
         self.progress = ctk.CTkProgressBar(container, width=400, height=6,
                                            progress_color=c["primary"],
@@ -402,23 +607,25 @@ class SetupPage(AppPage):
                                        font=ctk.CTkFont(family=MONO_FAMILY, size=12))
         self.log_text.pack(pady=16, fill="both", expand=True)
 
-        self.retry_btn = ctk.CTkButton(container, text="Retry",
-                                       fg_color=c["primary"],
-                                       hover_color=c["primary_hover"],
-                                       corner_radius=10,
-                                       font=ctk.CTkFont(family=f, size=13),
-                                       command=self.start_setup)
+        self.retry_btn = ctk.CTkButton(container, text=self.t("retry"),
+                                        fg_color=c["primary"],
+                                        hover_color=c["primary_hover"],
+                                        corner_radius=10,
+                                        font=ctk.CTkFont(family=f, size=13),
+                                        command=self.start_setup)
         self.retry_btn.pack(pady=8)
         self.retry_btn.pack_forget()
+        self._reg(self.retry_btn, "retry")
 
-        self.start_docker_btn = ctk.CTkButton(container, text="Start Docker",
-                                              fg_color=c["primary"],
-                                              hover_color=c["primary_hover"],
-                                              corner_radius=10,
-                                              font=ctk.CTkFont(family=f, size=13),
-                                              command=self._start_docker)
+        self.start_docker_btn = ctk.CTkButton(container, text=self.t("start_docker"),
+                                               fg_color=c["primary"],
+                                               hover_color=c["primary_hover"],
+                                               corner_radius=10,
+                                               font=ctk.CTkFont(family=f, size=13),
+                                               command=self._start_docker)
         self.start_docker_btn.pack(pady=8)
         self.start_docker_btn.pack_forget()
+        self._reg(self.start_docker_btn, "start_docker")
 
     def on_show(self):
         if not self.app.setup_done:
@@ -544,6 +751,7 @@ class SetupPage(AppPage):
         return True, msg
 
     def go_next(self):
+        session_log._history.clear()
         db_file = os.path.join(
             os.path.abspath(WRAPPER_DATA_DIR),
             "data", "com.apple.android.music", "files", "mpl_db", "kvs.sqlitedb"
@@ -551,7 +759,7 @@ class SetupPage(AppPage):
         if not os.path.isfile(db_file):
             self.app.show_frame("LoginPage")
         else:
-            self.app.show_frame("MainPage")
+            self.app.show_frame("TabbedContainer")
 
 
 class LoginPage(AppPage):
@@ -565,33 +773,45 @@ class LoginPage(AppPage):
         container = ctk.CTkFrame(self, fg_color="transparent")
         container.pack(expand=True, fill="both", padx=80, pady=60)
 
-        ctk.CTkLabel(container, text="Sign In",
-                     font=ctk.CTkFont(family=f, size=26, weight="bold"),
-                     text_color=c["text"]).pack(pady=(40, 8))
-        ctk.CTkLabel(container, text="Tips: 登录一次即可缓存凭据，无需重复输入",
-                     font=ctk.CTkFont(family=f, size=13),
-                     text_color=c["text_secondary"]).pack(pady=(0, 24))
+        lang_row = ctk.CTkFrame(container, fg_color="transparent")
+        lang_row.pack(fill="x", pady=(0, 16))
+        lang_label_text = "中文" if self.app.lang == "zh" else "English"
+        self._login_lang_btn = ctk.CTkButton(lang_row, text=lang_label_text, anchor="center",
+                                             fg_color=c["input_bg"], hover_color=c["divider"],
+                                             text_color=c["text"],
+                                             font=ctk.CTkFont(family=f, size=11),
+                                             corner_radius=6, height=28, width=60,
+                                             command=self._toggle_lang)
+        self._login_lang_btn.pack(side="right")
+
+        lbl = ctk.CTkLabel(container, text=self.t("sign_in"),
+                           font=ctk.CTkFont(family=f, size=26, weight="bold"),
+                           text_color=c["text"]); lbl.pack(pady=(40, 8)); self._reg(lbl, "sign_in")
+        lbl = ctk.CTkLabel(container, text=self.t("tips_login"),
+                           font=ctk.CTkFont(family=f, size=13),
+                           text_color=c["text_secondary"]); lbl.pack(pady=(0, 24)); self._reg(lbl, "tips_login")
 
         field_frame1 = ctk.CTkFrame(container, fg_color="transparent")
         field_frame1.pack(fill="x", pady=(0, 14))
-        ctk.CTkLabel(field_frame1, text="Apple ID",
-                     font=ctk.CTkFont(family=f, size=14),
-                     text_color=c["text_secondary"]).pack(anchor="w", pady=(0, 2))
+        lbl = ctk.CTkLabel(field_frame1, text=self.t("apple_id"),
+                           font=ctk.CTkFont(family=f, size=14),
+                           text_color=c["text_secondary"]); lbl.pack(anchor="w", pady=(0, 2)); self._reg(lbl, "apple_id")
         self.username_entry = ctk.CTkEntry(field_frame1, height=46,
                                            corner_radius=10,
                                            fg_color=c["input_bg"],
                                            text_color=c["text"],
                                            border_color=c["border"],
                                            font=ctk.CTkFont(family=f, size=14),
-                                           placeholder_text="example@icloud.com")
+                                           placeholder_text=self.t("placeholder_email"))
         self.username_entry.pack(fill="x")
         self.username_entry.bind("<Return>", lambda e: self.do_login())
+        self._reg(self.username_entry, "placeholder_email", "placeholder")
 
         field_frame2 = ctk.CTkFrame(container, fg_color="transparent")
         field_frame2.pack(fill="x", pady=(0, 20))
-        ctk.CTkLabel(field_frame2, text="Password",
-                     font=ctk.CTkFont(family=f, size=14),
-                     text_color=c["text_secondary"]).pack(anchor="w", pady=(0, 2))
+        lbl = ctk.CTkLabel(field_frame2, text=self.t("password"),
+                           font=ctk.CTkFont(family=f, size=14),
+                           text_color=c["text_secondary"]); lbl.pack(anchor="w", pady=(0, 2)); self._reg(lbl, "password")
         self.password_entry = ctk.CTkEntry(field_frame2, height=46,
                                            corner_radius=10,
                                            fg_color=c["input_bg"],
@@ -599,11 +819,12 @@ class LoginPage(AppPage):
                                            border_color=c["border"],
                                            show="\u2022",
                                            font=ctk.CTkFont(family=f, size=14),
-                                           placeholder_text="Enter password")
+                                           placeholder_text=self.t("placeholder_password"))
         self.password_entry.pack(fill="x")
         self.password_entry.bind("<Return>", lambda e: self.do_login())
+        self._reg(self.password_entry, "placeholder_password", "placeholder")
 
-        self.login_btn = ctk.CTkButton(container, text="Sign In",
+        self.login_btn = ctk.CTkButton(container, text=self.t("sign_in"),
                                        width=340, height=42,
                                        fg_color=c["primary"],
                                        hover_color=c["primary_hover"],
@@ -611,6 +832,7 @@ class LoginPage(AppPage):
                                        font=ctk.CTkFont(family=f, size=16, weight="bold"),
                                        command=self.do_login)
         self.login_btn.pack(pady=6)
+        self._reg(self.login_btn, "sign_in")
 
         self.status_label = ctk.CTkLabel(container, text="",
                                           font=ctk.CTkFont(family=f, size=12),
@@ -627,6 +849,12 @@ class LoginPage(AppPage):
         self.status_label.configure(text="")
         self.progress.set(0)
         self.login_btn.configure(state="normal")
+
+    def _toggle_lang(self):
+        new_lang = "en" if self.app.lang == "zh" else "zh"
+        self.app.set_language(new_lang)
+        if hasattr(self, '_login_lang_btn') and self._login_lang_btn.winfo_exists():
+            self._login_lang_btn.configure(text="中文" if new_lang == "zh" else "English")
 
     def do_login(self):
         username = self.username_entry.get().strip()
@@ -652,7 +880,7 @@ class LoginPage(AppPage):
             self.status_label.configure(text="Login successful", text_color=self.c("success"))
             ok2, _ = do_start_wrapper()
             self.app.wrapper_ready = ok2
-            self.after(1000, lambda: self.app.show_frame("MainPage"))
+            self.after(1000, lambda: self.app.show_frame("TabbedContainer"))
         else:
             self.status_label.configure(text=msg, text_color=self.c("error"))
             self.login_btn.configure(state="normal")
@@ -665,6 +893,99 @@ MODE_SPECS = [
     ("atmos",       "杜比全景声",      "--atmos {url}"),
     ("aac",         "AAC",             "--aac --aac-type {aac_type} {url}"),
 ]
+
+
+class TabbedContainer(AppPage):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self.current_tab = "download"
+        c = app.colors
+        f = FONT_FAMILY
+
+        self.sidebar = ctk.CTkFrame(self, fg_color=c["card"], width=140, corner_radius=0,
+                                    border_color=c["divider"], border_width=1)
+        self.sidebar.pack(side="left", fill="y")
+        self.sidebar.pack_propagate(False)
+
+        self.tab_btns = {}
+        sep = ctk.CTkFrame(self.sidebar, height=12, fg_color="transparent")
+        sep.pack(fill="x")
+        self._tab_keys = [("download", "tab_download"), ("status", "tab_status"), ("config", "tab_config")]
+        for key, i18n_key in self._tab_keys:
+            btn = ctk.CTkButton(self.sidebar, text=self.t(i18n_key), anchor="w",
+                                fg_color="transparent", hover_color=c["input_bg"],
+                                text_color=c["text"],
+                                font=ctk.CTkFont(family=f, size=13),
+                                corner_radius=6, height=34,
+                                command=lambda k=key: self.show_tab(k))
+            btn.pack(fill="x", padx=8, pady=(0, 2))
+            self.tab_btns[key] = btn
+            self._reg(btn, i18n_key)
+
+        space = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        space.pack(side="bottom", fill="x", padx=8, pady=6)
+
+        lang_label = "中文" if self.app.lang == "zh" else "English"
+        self._lang_btn = ctk.CTkButton(space, text=lang_label, anchor="center",
+                                       fg_color=c["input_bg"], hover_color=c["divider"],
+                                       text_color=c["text"],
+                                       font=ctk.CTkFont(family=f, size=11),
+                                       corner_radius=6, height=28,
+                                       command=self._toggle_lang)
+        self._lang_btn.pack(fill="x")
+
+        self.content = ctk.CTkFrame(self, fg_color="transparent")
+        self.content.pack(side="left", fill="both", expand=True)
+
+        self.pages = {}
+        self.main_page = MainPage(self.content, app)
+        self.pages["download"] = self.main_page
+        self.main_page.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        self.config_page = ConfigPage(self.content, app)
+        self.pages["config"] = self.config_page
+        self.config_page.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        self.status_page = StatusPage(self.content, app)
+        self.pages["status"] = self.status_page
+        self.status_page.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        self.show_tab("download")
+
+    def show_tab(self, key):
+        self.current_tab = key
+        c = self.app.colors
+        for k, btn in self.tab_btns.items():
+            if k == key:
+                btn.configure(fg_color=c["primary"], text_color="white",
+                              hover_color=c["primary_hover"])
+            else:
+                btn.configure(fg_color="transparent", text_color=c["text"],
+                              hover_color=c["input_bg"])
+        page = self.pages[key]
+        page.tkraise()
+        if hasattr(page, "on_show"):
+            page.on_show()
+
+    def on_show(self):
+        if self.current_tab in self.pages:
+            page = self.pages[self.current_tab]
+            if hasattr(page, "on_show"):
+                page.on_show()
+
+    def _toggle_lang(self):
+        new_lang = "en" if self.app.lang == "zh" else "zh"
+        self.app.set_language(new_lang)
+        self._lang_btn.configure(text="中文" if new_lang == "zh" else "English")
+
+    def refresh_language(self):
+        super().refresh_language()
+        for key, i18n_key in self._tab_keys:
+            if key in self.tab_btns:
+                self.tab_btns[key].configure(text=self.t(i18n_key))
+        for page in self.pages.values():
+            if hasattr(page, "refresh_language"):
+                page.refresh_language()
 
 
 class MainPage(AppPage):
@@ -680,6 +1001,8 @@ class MainPage(AppPage):
         self._popup = None
         self._popup_dismiss_id = None
         self._reposition_timer = None
+        self._dl_proc = None
+        self._downloading = False
         self.build_ui()
 
     def build_ui(self):
@@ -691,9 +1014,10 @@ class MainPage(AppPage):
         topbar.pack(fill="x")
         topbar.pack_propagate(False)
 
-        ctk.CTkLabel(topbar, text="Apple Music Downloader",
-                     font=ctk.CTkFont(family=f, size=16, weight="bold"),
-                     text_color=c["text"]).pack(side="left", padx=16, pady=11)
+        self._title_label = ctk.CTkLabel(topbar, text=self.t("app_title"),
+                                         font=ctk.CTkFont(family=f, size=16, weight="bold"),
+                                         text_color=c["text"])
+        self._title_label.pack(side="left", padx=16, pady=11); self._reg(self._title_label, "app_title")
 
         right_frame = ctk.CTkFrame(topbar, fg_color="transparent")
         right_frame.pack(side="right", padx=6)
@@ -701,9 +1025,10 @@ class MainPage(AppPage):
         self.wrapper_dot = ctk.CTkFrame(right_frame, width=10, height=10,
                                         corner_radius=5, fg_color=c["error"])
         self.wrapper_dot.pack(side="left", padx=(0, 4))
-        ctk.CTkLabel(right_frame, text="Wrapper",
-                     font=ctk.CTkFont(family=f, size=12),
-                     text_color=c["text_secondary"]).pack(side="left", padx=(0, 8))
+        self._wrapper_label = ctk.CTkLabel(right_frame, text=self.t("wrapper"),
+                                           font=ctk.CTkFont(family=f, size=12),
+                                           text_color=c["text_secondary"])
+        self._wrapper_label.pack(side="left", padx=(0, 8)); self._reg(self._wrapper_label, "wrapper")
 
         body = ctk.CTkFrame(self, fg_color=c["background"], corner_radius=0)
         body.pack(fill="both", expand=True, padx=12, pady=(8, 0))
@@ -725,7 +1050,7 @@ class MainPage(AppPage):
                                         font=ctk.CTkFont(family=f, size=13),
                                         width=150)
         self._mode_entry.pack(side="left", padx=(0, 8))
-        self._mode_entry.insert(0, "专辑")
+        self._mode_entry.insert(0, self._mode_name("album"))
         self._mode_entry.configure(state="readonly")
         self._mode_entry.bind("<Button-1>", lambda e: self._show_mode_popup())
 
@@ -734,11 +1059,12 @@ class MainPage(AppPage):
                                        fg_color=c["input_bg"], text_color=c["text"],
                                        border_color=c["border"],
                                        font=ctk.CTkFont(family=f, size=13),
-                                       placeholder_text="粘贴 Apple Music 链接...",
+                                       placeholder_text=self.t("placeholder_url"),
                                        textvariable=self._url_var)
         self._url_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self._url_entry.bind("<Return>", lambda e: self._start_download())
         self._url_entry.bind("<Button-3>", self._paste_url)
+        self._reg(self._url_entry, "placeholder_url", "placeholder")
 
         self._close_img = _make_close(color=c["text_secondary"])
         self._clear_btn = ctk.CTkButton(ctrl_row, text="", width=32, height=36,
@@ -747,13 +1073,14 @@ class MainPage(AppPage):
                                         command=self._clear_url)
         self._clear_btn.pack(side="left", padx=(0, 8))
 
-        self._go_btn = ctk.CTkButton(ctrl_row, text="Download", width=96, height=36,
+        self._go_btn = ctk.CTkButton(ctrl_row, text=self.t("download"), width=96, height=36,
                                      corner_radius=8,
                                      fg_color=c["primary"], hover_color=c["primary_hover"],
                                      text_color="white",
                                      font=ctk.CTkFont(family=f, size=14, weight="bold"),
                                      command=self._start_download)
         self._go_btn.pack(side="right")
+        self._reg(self._go_btn, "download")
 
         self._extra_row = ctk.CTkFrame(card_inner, fg_color="transparent")
         self._extra_row.pack(fill="x", pady=(6, 0))
@@ -770,29 +1097,32 @@ class MainPage(AppPage):
 
         footer = ctk.CTkFrame(body, fg_color="transparent")
         footer.pack(fill="x", pady=(2, 0))
-        ctk.CTkLabel(footer, text="Output",
-                     font=ctk.CTkFont(family=f, size=12, weight="bold"),
-                     text_color=c["text"]).pack(side="left")
-        ctk.CTkButton(footer, text="Clear", width=48, height=22,
-                      fg_color=c["card"], hover_color=c["divider"],
-                      text_color=c["text_secondary"], corner_radius=4,
-                      font=ctk.CTkFont(family=f, size=10),
-                      command=self._clear_console).pack(side="right")
+        lbl = ctk.CTkLabel(footer, text=self.t("output"),
+                           font=ctk.CTkFont(family=f, size=12, weight="bold"),
+                           text_color=c["text"]); lbl.pack(side="left"); self._reg(lbl, "output")
+        clear_footer_btn = ctk.CTkButton(footer, text=self.t("clear"), width=48, height=22,
+                                         fg_color=c["card"], hover_color=c["divider"],
+                                         text_color=c["text_secondary"], corner_radius=4,
+                                         font=ctk.CTkFont(family=f, size=10),
+                                         command=self._clear_console)
+        clear_footer_btn.pack(side="right")
+        self._reg(clear_footer_btn, "clear")
 
         self.status_bar = ctk.CTkFrame(self, fg_color=c["card"], height=26, corner_radius=0,
                                        border_color=c["divider"], border_width=1)
         self.status_bar.pack(fill="x", side="bottom")
         self.status_bar.pack_propagate(False)
 
-        self.status_text = ctk.CTkLabel(self.status_bar, text="Ready",
-                                        font=ctk.CTkFont(family=f, size=11),
-                                        text_color=c["text_secondary"])
-        self.status_text.pack(side="left", padx=10, pady=2)
+        self._status_text = ctk.CTkLabel(self.status_bar, text=self.t("ready"),
+                                         font=ctk.CTkFont(family=f, size=11),
+                                         text_color=c["text_secondary"])
+        self._status_text.pack(side="left", padx=10, pady=2); self._reg(self._status_text, "ready")
 
-        self.output_path_label = ctk.CTkLabel(self.status_bar, text=f"Output: {DOWNLOAD_DIR}",
-                                              font=ctk.CTkFont(family=f, size=10),
-                                              text_color=c["text_secondary"])
-        self.output_path_label.pack(side="right", padx=(0, 10), pady=2)
+        self._output_path_label = ctk.CTkLabel(self.status_bar,
+                                               text=self.t("output_to", path=DOWNLOAD_DIR),
+                                               font=ctk.CTkFont(family=f, size=10),
+                                               text_color=c["text_secondary"])
+        self._output_path_label.pack(side="right", padx=(0, 10), pady=2)
 
         self._open_folder_img = _make_folder(size=14, color=c["text_secondary"])
         self._open_folder_btn = ctk.CTkButton(self.status_bar, text="",
@@ -811,10 +1141,7 @@ class MainPage(AppPage):
         os.startfile(DOWNLOAD_DIR)
 
     def _on_download_done(self):
-        try:
-            self._go_btn.configure(state="normal", text="Download")
-        except Exception:
-            pass
+        self._reset_download_state()
         self._clear_url()
 
     def _paste_url(self, event=None):
@@ -906,6 +1233,16 @@ class MainPage(AppPage):
         except Exception:
             pass
 
+    def refresh_language(self):
+        super().refresh_language()
+        self._output_path_label.configure(text=self.t("output_to", path=DOWNLOAD_DIR))
+        current_key = self._mode_var.get()
+        name = self._mode_name(current_key)
+        self._mode_entry.configure(state="normal")
+        self._mode_entry.delete(0, "end")
+        self._mode_entry.insert(0, name)
+        self._mode_entry.configure(state="readonly")
+
     def _poll_status(self):
         try:
             self._update_status()
@@ -920,10 +1257,16 @@ class MainPage(AppPage):
             if hasattr(self, 'wrapper_dot') and self.wrapper_dot.winfo_exists():
                 dot_color = c["success"] if running else c["error"]
                 self.wrapper_dot.configure(fg_color=dot_color)
-                status_text = f"Running | {DECRYPT_PORT}:{M3U8_PORT}:{ACCOUNT_PORT}" if running else "Stopped"
-                self.status_text.configure(text=status_text)
+                ports = f"{DECRYPT_PORT}:{M3U8_PORT}:{ACCOUNT_PORT}"
+                status_text = self.t("running_status", ports=ports) if running else self.t("stopped")
+                self._status_text.configure(text=status_text)
         except Exception:
             pass
+
+    def _mode_name(self, key):
+        i18n_map = {"album": "mode_album", "song": "mode_song", "playlist": "mode_playlist",
+                    "atmos": "mode_atmos", "aac": "mode_aac"}
+        return self.t(i18n_map.get(key, key))
 
     def _show_mode_popup(self):
         if self._popup and self._popup.winfo_exists():
@@ -959,7 +1302,7 @@ class MainPage(AppPage):
             self._mode_entry.delete(0, "end")
             self._mode_entry.insert(0, name)
             self._mode_entry.configure(state="readonly")
-            self._on_mode_change(name)
+            self._on_mode_change(key)
             dismiss()
 
         def dismiss(*args):
@@ -979,7 +1322,8 @@ class MainPage(AppPage):
                     pass
                 self._popup = None
 
-        for i, (key, name, _) in enumerate(MODE_SPECS):
+        for i, (key, _name, _) in enumerate(MODE_SPECS):
+            name = self._mode_name(key)
             btn = ctk.CTkButton(frame, text=name, anchor="w",
                                 fg_color="transparent", hover_color=c["input_bg"],
                                 text_color=c["text"],
@@ -1018,7 +1362,7 @@ class MainPage(AppPage):
         self._popup_dismiss_id = bind_id
         popup.bind("<Escape>", lambda e: dismiss())
 
-    def _on_mode_change(self, choice):
+    def _on_mode_change(self, key):
         for w in self._extra_widgets:
             try:
                 w.destroy()
@@ -1026,10 +1370,8 @@ class MainPage(AppPage):
                 pass
         self._extra_widgets.clear()
 
-        key = [m for m in MODE_SPECS if m[1] == choice][0][0]
-
         if key == "aac":
-            self._add_extra_dropdown("Format:", ["aac-lc", "aac", "aac-binaural", "aac-downmix"], "aac-lc")
+            self._add_extra_dropdown(self.t("format_label"), ["aac-lc", "aac", "aac-binaural", "aac-downmix"], "aac-lc")
             self._extra_row.pack(fill="x", pady=(6, 0))
         else:
             self._extra_row.pack_forget()
@@ -1076,6 +1418,10 @@ class MainPage(AppPage):
         return True
 
     def _start_download(self):
+        if self._downloading:
+            self._cancel_download()
+            return
+
         key = self._mode_var.get()
         spec = next(m for m in MODE_SPECS if m[0] == key)
         tmpl = spec[2]
@@ -1104,21 +1450,34 @@ class MainPage(AppPage):
         if not self._ensure_prereqs():
             return
         self.log(f">>> {title}")
-        self._go_btn.configure(state="disabled", text="Running...")
+        self._downloading = True
+        self._go_btn.configure(fg_color=self.c("error"), hover_color="#CC2F26",
+                               text=self.t("running_btn"))
         threading.Thread(target=self._dl_thread, args=(args,), daemon=True).start()
 
-    def _dl_thread(self, arguments):
+    def _cancel_download(self):
+        if self._dl_proc and self._dl_proc.poll() is None:
+            self._dl_proc.kill()
+            self.log("[CANCEL] Download cancelled")
+        self._reset_download_state()
+
+    def _reset_download_state(self):
+        self._downloading = False
+        self._dl_proc = None
         try:
-            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            self._go_btn.configure(fg_color=self.c("primary"), hover_color=self.c("primary_hover"),
+                                   text=self.t("download"))
+        except Exception:
+            pass
+
+    def _dl_thread(self, arguments):
+        config_path = get_config_path()
+        if config_path:
+            with open(config_path, 'r', encoding='utf-8') as f:
                 config_content = f.read()
-        except FileNotFoundError:
-            self.log("[WARN] config.yaml not found, using defaults")
-            config_path = os.path.join(DATA_DIR, "assets", "apple-music-downloader", "config.yaml.example")
-            if os.path.isfile(config_path):
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    config_content = f.read()
-            else:
-                config_content = ""
+        else:
+            self.log("[WARN] No config.yaml found, using defaults")
+            config_content = ""
 
         for folder_key in ['alac-save-folder', 'atmos-save-folder', 'aac-save-folder', 'mv-save-folder']:
             config_content = re.sub(
@@ -1143,22 +1502,26 @@ class MainPage(AppPage):
                                     stderr=subprocess.STDOUT,
                                     text=True, encoding="utf-8", errors="replace",
                                     startupinfo=_SI, creationflags=_CF)
+            self._dl_proc = proc
             buf = ""
-            for ch in iter(lambda: proc.stdout.read(1), ""):
-                if ch in ("\r", "\n"):
-                    if buf.strip():
-                        if "%" in buf:
-                            self.log_replace(buf.strip())
-                        else:
-                            self.log(buf.strip())
-                    buf = ""
-                else:
-                    buf += ch
-            if buf.strip():
-                self.log(buf.strip())
-            proc.wait()
-            if proc.returncode != 0:
-                self.log(f"Exit code: {proc.returncode}")
+            try:
+                for ch in iter(lambda: proc.stdout.read(1), ""):
+                    if ch in ("\r", "\n"):
+                        if buf.strip():
+                            if "%" in buf:
+                                self.log_replace(buf.strip())
+                            else:
+                                self.log(buf.strip())
+                        buf = ""
+                    else:
+                        buf += ch
+                if buf.strip():
+                    self.log(buf.strip())
+                proc.wait()
+                if proc.returncode != 0:
+                    self.log(f"Exit code: {proc.returncode}")
+            except Exception:
+                pass
         finally:
             try:
                 os.remove(tmp_config)
@@ -1166,6 +1529,268 @@ class MainPage(AppPage):
                 pass
         self.log(f"Done - output: {DOWNLOAD_DIR}")
         self.after(0, self._on_download_done)
+
+
+class ConfigPage(AppPage):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self.build_ui()
+
+    def build_ui(self):
+        c = self.app.colors
+        f = FONT_FAMILY
+
+        topbar = ctk.CTkFrame(self, fg_color=c["card"], height=44, corner_radius=0,
+                              border_color=c["divider"], border_width=1)
+        topbar.pack(fill="x")
+        topbar.pack_propagate(False)
+
+        self._config_title = ctk.CTkLabel(topbar, text=self.t("config_title"),
+                                          font=ctk.CTkFont(family=f, size=16, weight="bold"),
+                                          text_color=c["text"])
+        self._config_title.pack(side="left", padx=16, pady=11); self._reg(self._config_title, "config_title")
+
+        btn_frame = ctk.CTkFrame(topbar, fg_color="transparent")
+        btn_frame.pack(side="right", padx=6)
+
+        self.reload_btn = ctk.CTkButton(btn_frame, text=self.t("reload"), width=72, height=30,
+                                        corner_radius=6,
+                                        fg_color=c["input_bg"], hover_color=c["divider"],
+                                        text_color=c["text"],
+                                        font=ctk.CTkFont(family=f, size=12),
+                                        command=self._reload_config)
+        self.reload_btn.pack(side="left", padx=(0, 6)); self._reg(self.reload_btn, "reload")
+
+        self.save_btn = ctk.CTkButton(btn_frame, text=self.t("save"), width=60, height=30,
+                                      corner_radius=6,
+                                      fg_color=c["primary"], hover_color=c["primary_hover"],
+                                      text_color="white",
+                                      font=ctk.CTkFont(family=f, size=12, weight="bold"),
+                                      command=self._save_config)
+        self.save_btn.pack(side="left"); self._reg(self.save_btn, "save")
+
+        self.status_label = ctk.CTkLabel(self, text="",
+                                         font=ctk.CTkFont(family=f, size=11),
+                                         text_color=c["text_secondary"])
+        self.status_label.pack(fill="x", padx=12, pady=(4, 0))
+
+        self.config_editor = ctk.CTkTextbox(self,
+                                            fg_color=c["card"], text_color=c["text"],
+                                            border_color=c["border"], border_width=1,
+                                            corner_radius=10,
+                                            font=ctk.CTkFont(family=MONO_FAMILY, size=12),
+                                            wrap="none")
+        self.config_editor.pack(fill="both", expand=True, padx=8, pady=8)
+
+    def on_show(self):
+        self._reload_config()
+
+    def _reload_config(self):
+        content = load_config_content()
+        self.config_editor.configure(state="normal")
+        self.config_editor.delete("1.0", "end")
+        self.config_editor.insert("1.0", content)
+        self.config_editor.configure(state="normal")
+        path = get_config_path()
+        if path:
+            self.status_label.configure(text=self.t("config_source", path=path), text_color=self.c("text_secondary"))
+        else:
+            self.status_label.configure(text=self.t("config_not_found"), text_color=self.c("error"))
+
+    def _save_config(self):
+        content = self.config_editor.get("1.0", "end-1c")
+        try:
+            os.makedirs(APP_DATA_DIR, exist_ok=True)
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                f.write(content)
+            self.status_label.configure(
+                text=self.t("config_saved", path=CONFIG_FILE),
+                text_color=self.c("success")
+            )
+        except Exception as e:
+            self.status_label.configure(text=self.t("config_save_failed", error=e), text_color=self.c("error"))
+
+
+class StatusPage(AppPage):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self._items = {}
+        self._section_headers = []
+        self._item_labels = {}
+        self._path_labels = {}
+        self.build_ui()
+
+    def build_ui(self):
+        c = self.app.colors
+        f = FONT_FAMILY
+        folder_img = _make_folder(size=14, color=c["text_secondary"])
+
+        topbar = ctk.CTkFrame(self, fg_color=c["card"], height=44, corner_radius=0,
+                              border_color=c["divider"], border_width=1)
+        topbar.pack(fill="x")
+        topbar.pack_propagate(False)
+
+        lbl = ctk.CTkLabel(topbar, text=self.t("status_title"),
+                           font=ctk.CTkFont(family=f, size=16, weight="bold"),
+                           text_color=c["text"]); lbl.pack(side="left", padx=16, pady=11); self._reg(lbl, "status_title")
+
+        self.refresh_btn = ctk.CTkButton(topbar, text=self.t("status_refresh"), width=60, height=30,
+                                         corner_radius=6,
+                                         fg_color=c["primary"], hover_color=c["primary_hover"],
+                                         text_color="white",
+                                         font=ctk.CTkFont(family=f, size=12, weight="bold"),
+                                         command=self._refresh)
+        self.refresh_btn.pack(side="right", padx=6, pady=7); self._reg(self.refresh_btn, "status_refresh")
+
+        scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=12, pady=8)
+
+        sections = [
+            ("s_docker", [
+                ("docker-installed", "docker_installed"),
+                ("docker-running", "docker_running"),
+            ]),
+            ("s_images", [
+                ("wrapper-image", "wrapper_image"),
+                ("downloader-image", "dl_image"),
+            ]),
+            ("s_wrapper", [
+                ("wrapper-container", "wrapper_container"),
+                ("wrapper-ports", "wrapper_ports"),
+            ]),
+            ("s_login", [
+                ("login-cached", "login_cached"),
+            ]),
+        ]
+
+        for section_key, items in sections:
+            header = ctk.CTkLabel(scroll, text=self.t(section_key),
+                                  font=ctk.CTkFont(family=f, size=13, weight="bold"),
+                                  text_color=c["text_secondary"])
+            header.pack(anchor="w", pady=(12, 4))
+            self._section_headers.append((header, section_key))
+
+            card = ctk.CTkFrame(scroll, fg_color=c["card"], corner_radius=10,
+                                border_color=c["border"], border_width=1)
+            card.pack(fill="x", pady=(0, 4))
+
+            for key, i18n_key in items:
+                row = ctk.CTkFrame(card, fg_color="transparent", height=32)
+                row.pack(fill="x", padx=10, pady=3)
+                row.pack_propagate(False)
+
+                dot = ctk.CTkFrame(row, width=8, height=8, corner_radius=4,
+                                   fg_color=c["error"])
+                dot.pack(side="left", padx=(4, 8))
+
+                item_lbl = ctk.CTkLabel(row, text=self.t(i18n_key),
+                                        font=ctk.CTkFont(family=f, size=13),
+                                        text_color=c["text"])
+                item_lbl.pack(side="left")
+                self._item_labels[key] = (item_lbl, i18n_key)
+
+                value = ctk.CTkLabel(row, text=self.t("checking_status"),
+                                     font=ctk.CTkFont(family=f, size=12),
+                                     text_color=c["text_secondary"])
+                value.pack(side="right", padx=4)
+
+                self._items[key] = (dot, value)
+
+        path_header = ctk.CTkLabel(scroll, text=self.t("s_paths"),
+                                   font=ctk.CTkFont(family=f, size=13, weight="bold"),
+                                   text_color=c["text_secondary"])
+        path_header.pack(anchor="w", pady=(12, 4))
+        self._section_headers.append((path_header, "s_paths"))
+
+        path_card = ctk.CTkFrame(scroll, fg_color=c["card"], corner_radius=10,
+                                 border_color=c["border"], border_width=1)
+        path_card.pack(fill="x", pady=(0, 4))
+
+        paths = [
+            ("config-path", "config_path_label", CONFIG_FILE),
+            ("log-path", "log_path_label", LOG_DIR),
+            ("wrapper-data-path", "wrapper_data_path_label", WRAPPER_DATA_DIR),
+        ]
+
+        for key, i18n_key, path in paths:
+            row = ctk.CTkFrame(path_card, fg_color="transparent", height=32)
+            row.pack(fill="x", padx=10, pady=3)
+            row.pack_propagate(False)
+
+            plbl = ctk.CTkLabel(row, text=self.t(i18n_key),
+                                font=ctk.CTkFont(family=f, size=13),
+                                text_color=c["text"])
+            plbl.pack(side="left", padx=4)
+            self._item_labels[key] = (plbl, i18n_key)
+
+            path_label = ctk.CTkLabel(row, text=path,
+                                      font=ctk.CTkFont(family=f, size=11),
+                                      text_color=c["text_secondary"])
+            path_label.pack(side="left", padx=(6, 4))
+
+            btn = ctk.CTkButton(row, text="", width=24, height=22,
+                                corner_radius=4, image=folder_img,
+                                fg_color="transparent", hover_color=c["input_bg"],
+                                command=lambda p=path: os.startfile(p))
+            btn.pack(side="right", padx=2)
+
+            self._path_labels[key] = path_label
+
+    def on_show(self):
+        self._refresh()
+
+    def _refresh(self):
+        threading.Thread(target=self._run_checks, daemon=True).start()
+
+    def _run_checks(self):
+        c = self.app.colors
+        results = {}
+
+        docker_ver = _run("docker", "--version", silent=True)
+        results["docker-installed"] = (docker_ver != "", docker_ver.replace("Docker version ", "") if docker_ver else self.t("not_installed"))
+
+        docker_info = _run("docker", "info", silent=True)
+        results["docker-running"] = (docker_info != "", self.t("running") if docker_info else self.t("not_running"))
+
+        wrapper_img = _run("docker", "images", "-q", WRAPPER_IMAGE, silent=True)
+        results["wrapper-image"] = (wrapper_img != "", wrapper_img[:12] if wrapper_img else self.t("not_built"))
+
+        dl_img = _run("docker", "images", "-q", DL_IMAGE, silent=True)
+        results["downloader-image"] = (dl_img != "", dl_img[:12] if dl_img else self.t("not_built"))
+
+        wrapper_ok = wrapper_running()
+        results["wrapper-container"] = (wrapper_ok, self.t("running") if wrapper_ok else self.t("stopped"))
+
+        ports_text = f"{DECRYPT_PORT} / {M3U8_PORT} / {ACCOUNT_PORT}" if wrapper_ok else "—"
+        results["wrapper-ports"] = (wrapper_ok, ports_text)
+
+        db_file = os.path.join(os.path.abspath(WRAPPER_DATA_DIR),
+                               "data", "com.apple.android.music", "files", "mpl_db", "kvs.sqlitedb")
+        has_login = os.path.isfile(db_file)
+        results["login-cached"] = (has_login, self.t("logged_in") if has_login else self.t("not_logged_in"))
+
+        def update():
+            for key, (ok, text) in results.items():
+                if key in self._items:
+                    dot, label = self._items[key]
+                    dot.configure(fg_color=c["success"] if ok else c["error"])
+                    label.configure(text=text)
+            for key, lbl in self._path_labels.items():
+                path_map = {
+                    "config-path": CONFIG_FILE,
+                    "log-path": LOG_DIR,
+                    "wrapper-data-path": WRAPPER_DATA_DIR,
+                }
+                if key in path_map:
+                    lbl.configure(text=path_map[key])
+        self.after(0, update)
+
+    def refresh_language(self):
+        super().refresh_language()
+        for header, key in self._section_headers:
+            header.configure(text=self.t(key))
+        for (_lbl, i18n_key) in self._item_labels.values():
+            _lbl.configure(text=self.t(i18n_key))
 
 
 def main():

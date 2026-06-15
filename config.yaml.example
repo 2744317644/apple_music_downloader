@@ -1,5 +1,5 @@
 media-user-token: "your-media-user-token" #If you need to obtain lyrics and aac-lc, need to change it
-authorization-token: "" #You don't need to change it; it can automatically obtain token
+authorization-token: "your-authorization-token" #You don't need to change it; it can automatically obtain token
 language: ""         #supportedLanguage by each storefront --> https://gist.github.com/itouakirai/c8ba9df9dc65bd300094103b058731d0
 lrc-type: "lyrics"   #lyrics or syllable-lyrics
 lrc-format: "lrc"   #lrc or ttml
@@ -39,7 +39,7 @@ album-folder-format: "{AlbumName}"
 #{PlaylistId} {PlaylistName} {ArtistName} {Quality} {Codec} {Tag}
 playlist-folder-format: "{PlaylistName}"
 
-#{SongId} {SongNumer} {SongName} {DiscNumber} {TrackNumber} {Quality} {Codec} {Tag}
+#{SongId} {SongNumer} {ArtistName} {SongName} {DiscNumber} {TrackNumber} {Quality} {Codec} {Tag}
 #example: Disk {DiscNumber} - Track {TrackNumber} {SongName} [{Quality}]{{Tag}}"
 song-file-format: "{SongNumer}. {SongName}"
 

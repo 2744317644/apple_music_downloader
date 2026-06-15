@@ -65,6 +65,7 @@ echo     datas=[
 echo         (r'%ROOT%\assets\Wrapper', r'assets\Wrapper'^),
 echo         (r'%ROOT%\assets\apple-music-downloader', r'assets\apple-music-downloader'^),
 echo         (r'%ROOT%\assets\app_icon.ico', r'assets\app_icon.ico'^),
+echo         (r'%ROOT%\config.yaml.example', r'config.yaml.example'^),
 echo     ],
 echo     hiddenimports=['PIL._tkinter_finder'],
 echo     hookspath=[],

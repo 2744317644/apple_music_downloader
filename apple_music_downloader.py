@@ -6,6 +6,7 @@ Requires: Python 3.7+, Docker
 import os
 import re
 import sys
+import shutil
 import subprocess
 import tempfile
 import time
@@ -17,7 +18,9 @@ else:
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     DATA_DIR = SCRIPT_DIR
 DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
-CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.yaml")
+CONFIG_FILE = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "AppleMusicDownloader", "config.yaml")
+CONFIG_EXAMPLE = os.path.join(DATA_DIR, "config.yaml.example")
+CONFIG_EXAMPLE_ALT = os.path.join(DATA_DIR, "assets", "apple-music-downloader", "config.yaml.example")
 
 APP_DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "AppleMusicDownloader")
 
@@ -35,6 +38,27 @@ REGISTRY_MIRROR = os.environ.get("REGISTRY_MIRROR", "docker.m.daocloud.io")
 # ---- Downloader settings ----
 DL_SRC = os.environ.get("DL_SRC", os.path.join(DATA_DIR, "assets", "apple-music-downloader"))
 DL_IMAGE = "apple-music-downloader:local"
+
+
+def get_config_path():
+    """返回配置文件路径：若不存在则从示例复制"""
+    os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+    if not os.path.isfile(CONFIG_FILE):
+        example = None
+        if os.path.isfile(CONFIG_EXAMPLE):
+            example = CONFIG_EXAMPLE
+        elif os.path.isfile(CONFIG_EXAMPLE_ALT):
+            example = CONFIG_EXAMPLE_ALT
+        if example:
+            shutil.copy(example, CONFIG_FILE)
+            print(f"{C}[INFO] 默认配置已复制到: {CONFIG_FILE}{R}")
+        else:
+            print(f"{Y}[WARN] 未找到示例: {CONFIG_EXAMPLE}{R}")
+    if not os.path.isfile(CONFIG_FILE):
+        print(f"{Y}[WARN] 配置文件不存在: {CONFIG_FILE}{R}")
+        return None
+    return CONFIG_FILE
+
 
 # ---- ANSI colors ----
 R = "\033[0m"
@@ -56,6 +80,7 @@ def banner():
     print(f"{C}========================================")
     print(f"   Apple Music ALAC Downloader{W}")
     print(f"{C}========================================")
+    print(f"  {D}Config: {CONFIG_FILE}{R}")
     print()
 
 
@@ -295,12 +320,10 @@ def check_prerequisites():
         print(f"{E}[ERROR] Docker is not installed or not in PATH.{R}")
         sys.exit(1)
 
-    if not os.path.exists(CONFIG_FILE):
-        print(f"{Y}[WARN] config.yaml not found: {CONFIG_FILE}{R}")
-        print(f"{Y}[WARN] Copy config.yaml.example to config.yaml and edit it first.{R}")
-        ans = input("Continue without config.yaml? (y/n): ").strip().lower()
-        if ans != "y":
-            sys.exit(0)
+    os.makedirs(APP_DATA_DIR, exist_ok=True)
+    config_path = get_config_path()
+    if not config_path:
+        print(f"{Y}[WARN] 未找到配置文件示例 (config.yaml.example)，请手动创建 {CONFIG_FILE}{R}")
 
     if not _run("docker", "images", "-q", DL_IMAGE, silent=True):
         if not build_downloader_image():
@@ -326,16 +349,12 @@ def invoke_downloader(arguments, description):
     print(f"{M}>>> {description}{R}")
     print()
 
-    try:
-        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+    config_path = get_config_path()
+    if config_path:
+        with open(config_path, 'r', encoding='utf-8') as f:
             config_content = f.read()
-    except FileNotFoundError:
-        config_path = os.path.join(DATA_DIR, "assets", "apple-music-downloader", "config.yaml.example")
-        if os.path.isfile(config_path):
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config_content = f.read()
-        else:
-            config_content = ""
+    else:
+        config_content = ""
     for folder_key in ['alac-save-folder', 'atmos-save-folder', 'aac-save-folder', 'mv-save-folder']:
         config_content = re.sub(
             rf'^({folder_key}:\s*)"?([^"\n]+)"?',
