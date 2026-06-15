@@ -712,7 +712,7 @@ class TabbedContainer(AppPage):
                      text_color=c["text_secondary"]).pack(anchor="w")
 
         self.tab_btns = {}
-        tabs = [("download", "下载"), ("config", "配置")]
+        tabs = [("download", "下载"), ("status", "状态"), ("config", "配置")]
         for key, label in tabs:
             btn = ctk.CTkButton(self.sidebar, text=label, anchor="w",
                                 fg_color="transparent", hover_color=c["input_bg"],
@@ -734,6 +734,10 @@ class TabbedContainer(AppPage):
         self.config_page = ConfigPage(self.content, app)
         self.pages["config"] = self.config_page
         self.config_page.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        self.status_page = StatusPage(self.content, app)
+        self.pages["status"] = self.status_page
+        self.status_page.place(relx=0, rely=0, relwidth=1, relheight=1)
 
         self.show_tab("download")
 
@@ -1333,6 +1337,126 @@ class ConfigPage(AppPage):
             )
         except Exception as e:
             self.status_label.configure(text=f"保存失败: {e}", text_color=self.c("error"))
+
+
+class StatusPage(AppPage):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self._items = {}
+        self.build_ui()
+
+    def build_ui(self):
+        c = self.app.colors
+        f = FONT_FAMILY
+
+        topbar = ctk.CTkFrame(self, fg_color=c["card"], height=44, corner_radius=0,
+                              border_color=c["divider"], border_width=1)
+        topbar.pack(fill="x")
+        topbar.pack_propagate(False)
+
+        ctk.CTkLabel(topbar, text="系统状态",
+                     font=ctk.CTkFont(family=f, size=16, weight="bold"),
+                     text_color=c["text"]).pack(side="left", padx=16, pady=11)
+
+        self.refresh_btn = ctk.CTkButton(topbar, text="刷新", width=60, height=30,
+                                         corner_radius=6,
+                                         fg_color=c["primary"], hover_color=c["primary_hover"],
+                                         text_color="white",
+                                         font=ctk.CTkFont(family=f, size=12, weight="bold"),
+                                         command=self._refresh)
+        self.refresh_btn.pack(side="right", padx=6, pady=7)
+
+        scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=12, pady=8)
+
+        sections = [
+            ("Docker", [
+                ("docker-installed", "Docker 已安装"),
+                ("docker-running", "Docker 守护进程"),
+            ]),
+            ("镜像", [
+                ("wrapper-image", "Wrapper 镜像"),
+                ("downloader-image", "下载器镜像"),
+            ]),
+            ("Wrapper 容器", [
+                ("wrapper-container", "容器运行状态"),
+                ("wrapper-ports", "端口映射"),
+            ]),
+            ("登录", [
+                ("login-cached", "凭据缓存"),
+            ]),
+        ]
+
+        for section_title, items in sections:
+            header = ctk.CTkLabel(scroll, text=section_title,
+                                  font=ctk.CTkFont(family=f, size=13, weight="bold"),
+                                  text_color=c["text_secondary"])
+            header.pack(anchor="w", pady=(12, 4))
+
+            card = ctk.CTkFrame(scroll, fg_color=c["card"], corner_radius=10,
+                                border_color=c["border"], border_width=1)
+            card.pack(fill="x", pady=(0, 4))
+
+            for key, label in items:
+                row = ctk.CTkFrame(card, fg_color="transparent", height=32)
+                row.pack(fill="x", padx=10, pady=3)
+                row.pack_propagate(False)
+
+                dot = ctk.CTkFrame(row, width=8, height=8, corner_radius=4,
+                                   fg_color=c["error"])
+                dot.pack(side="left", padx=(4, 8))
+
+                ctk.CTkLabel(row, text=label,
+                             font=ctk.CTkFont(family=f, size=13),
+                             text_color=c["text"]).pack(side="left")
+
+                value = ctk.CTkLabel(row, text="检测中...",
+                                     font=ctk.CTkFont(family=f, size=12),
+                                     text_color=c["text_secondary"])
+                value.pack(side="right", padx=4)
+
+                self._items[key] = (dot, value)
+
+    def on_show(self):
+        self._refresh()
+
+    def _refresh(self):
+        threading.Thread(target=self._run_checks, daemon=True).start()
+
+    def _run_checks(self):
+        c = self.app.colors
+        results = {}
+
+        docker_ver = _run("docker", "--version", silent=True)
+        results["docker-installed"] = (docker_ver != "", docker_ver.replace("Docker version ", "") if docker_ver else "未安装")
+
+        docker_info = _run("docker", "info", silent=True)
+        results["docker-running"] = (docker_info != "", "运行中" if docker_info else "未运行")
+
+        wrapper_img = _run("docker", "images", "-q", WRAPPER_IMAGE, silent=True)
+        results["wrapper-image"] = (wrapper_img != "", wrapper_img[:12] if wrapper_img else "未构建")
+
+        dl_img = _run("docker", "images", "-q", DL_IMAGE, silent=True)
+        results["downloader-image"] = (dl_img != "", dl_img[:12] if dl_img else "未构建")
+
+        wrapper_ok = wrapper_running()
+        results["wrapper-container"] = (wrapper_ok, "运行中" if wrapper_ok else "已停止")
+
+        ports_text = f"{DECRYPT_PORT} / {M3U8_PORT} / {ACCOUNT_PORT}" if wrapper_ok else "—"
+        results["wrapper-ports"] = (wrapper_ok, ports_text)
+
+        db_file = os.path.join(os.path.abspath(WRAPPER_DATA_DIR),
+                               "data", "com.apple.android.music", "files", "mpl_db", "kvs.sqlitedb")
+        has_login = os.path.isfile(db_file)
+        results["login-cached"] = (has_login, "已登录" if has_login else "未登录")
+
+        def update():
+            for key, (ok, text) in results.items():
+                if key in self._items:
+                    dot, label = self._items[key]
+                    dot.configure(fg_color=c["success"] if ok else c["error"])
+                    label.configure(text=text)
+        self.after(0, update)
 
 
 def main():
