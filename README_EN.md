@@ -1,5 +1,7 @@
 # Apple Music ALAC Downloader
 
+English | [中文](README.md)
+
 > Apple Music lossless ALAC / Dolby Atmos / AAC downloader
 
 ## Acknowledgments
@@ -17,9 +19,6 @@ Thanks to the authors and contributors of the above projects.
 - Dolby Atmos spatial audio downloads
 - AAC-LC / AAC / AAC-Binaural / AAC-Downmix downloads
 - Full album, single song, and playlist downloads
-- Interactive track selection (CLI)
-- Search by song / album / artist (CLI)
-- Download all albums by an artist (CLI)
 - Lyrics download (LRC / TTML)
 - Cover art embedding and animated artwork download
 - Post-download format conversion (FLAC / MP3 / Opus / WAV)

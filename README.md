@@ -1,5 +1,7 @@
 # Apple Music ALAC Downloader
 
+[English](README_EN.md) | 中文
+
 > Apple Music 无损 ALAC / 杜比全景声 Dolby Atmos / AAC 下载工具
 
 ## 致谢
@@ -17,9 +19,6 @@
 - 支持 Dolby Atmos 杜比全景声下载
 - 支持 AAC-LC / AAC / AAC-Binaural / AAC-Downmix 下载
 - 支持整张专辑、单曲、播放列表下载
-- 支持交互式选曲下载（终端版）
-- 支持搜索歌曲/专辑/艺人（终端版）
-- 支持下载艺人全部专辑（终端版）
 - 支持歌词下载（LRC / TTML）
 - 支持封面嵌入、动画封面下载
 - 支持下载后格式转换（FLAC / MP3 / Opus / WAV）
