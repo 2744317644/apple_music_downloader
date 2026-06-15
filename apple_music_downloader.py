@@ -19,7 +19,7 @@ else:
     DATA_DIR = SCRIPT_DIR
 DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
 CONFIG_FILE = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "AppleMusicDownloader", "config.yaml")
-CONFIG_EXAMPLE = os.path.join(SCRIPT_DIR, "config.yaml.example")
+CONFIG_EXAMPLE = os.path.join(DATA_DIR, "config.yaml.example")
 
 APP_DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "AppleMusicDownloader")
 
