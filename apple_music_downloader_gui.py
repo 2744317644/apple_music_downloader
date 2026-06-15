@@ -1343,11 +1343,13 @@ class StatusPage(AppPage):
     def __init__(self, parent, app):
         super().__init__(parent, app)
         self._items = {}
+        self._path_labels = {}
         self.build_ui()
 
     def build_ui(self):
         c = self.app.colors
         f = FONT_FAMILY
+        folder_img = _make_folder(size=14, color=c["text_secondary"])
 
         topbar = ctk.CTkFrame(self, fg_color=c["card"], height=44, corner_radius=0,
                               border_color=c["divider"], border_width=1)
@@ -1417,6 +1419,43 @@ class StatusPage(AppPage):
 
                 self._items[key] = (dot, value)
 
+        path_header = ctk.CTkLabel(scroll, text="路径",
+                                   font=ctk.CTkFont(family=f, size=13, weight="bold"),
+                                   text_color=c["text_secondary"])
+        path_header.pack(anchor="w", pady=(12, 4))
+
+        path_card = ctk.CTkFrame(scroll, fg_color=c["card"], corner_radius=10,
+                                 border_color=c["border"], border_width=1)
+        path_card.pack(fill="x", pady=(0, 4))
+
+        paths = [
+            ("config-path", "配置文件", CONFIG_FILE),
+            ("log-path", "日志目录", LOG_DIR),
+            ("wrapper-data-path", "Wrapper 数据", WRAPPER_DATA_DIR),
+        ]
+
+        for key, label, path in paths:
+            row = ctk.CTkFrame(path_card, fg_color="transparent", height=32)
+            row.pack(fill="x", padx=10, pady=3)
+            row.pack_propagate(False)
+
+            ctk.CTkLabel(row, text=label,
+                         font=ctk.CTkFont(family=f, size=13),
+                         text_color=c["text"]).pack(side="left", padx=4)
+
+            path_label = ctk.CTkLabel(row, text=path,
+                                      font=ctk.CTkFont(family=f, size=11),
+                                      text_color=c["text_secondary"])
+            path_label.pack(side="left", padx=(6, 4))
+
+            btn = ctk.CTkButton(row, text="", width=24, height=22,
+                                corner_radius=4, image=folder_img,
+                                fg_color="transparent", hover_color=c["input_bg"],
+                                command=lambda p=path: os.startfile(p))
+            btn.pack(side="right", padx=2)
+
+            self._path_labels[key] = path_label
+
     def on_show(self):
         self._refresh()
 
@@ -1456,6 +1495,14 @@ class StatusPage(AppPage):
                     dot, label = self._items[key]
                     dot.configure(fg_color=c["success"] if ok else c["error"])
                     label.configure(text=text)
+            for key, lbl in self._path_labels.items():
+                path_map = {
+                    "config-path": CONFIG_FILE,
+                    "log-path": LOG_DIR,
+                    "wrapper-data-path": WRAPPER_DATA_DIR,
+                }
+                if key in path_map:
+                    lbl.configure(text=path_map[key])
         self.after(0, update)
 
 
