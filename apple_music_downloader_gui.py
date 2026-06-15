@@ -65,7 +65,7 @@ def load_config_content():
     return ""
 
 
-FONT_FAMILY = None
+FONT_FAMILY = "Segoe UI"
 MONO_FAMILY = "Consolas"
 APP_ICON = os.path.join(DATA_DIR, "assets", "app_icon.ico")
 
