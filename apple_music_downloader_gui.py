@@ -26,6 +26,7 @@ else:
 DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
 CONFIG_FILE = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "AppleMusicDownloader", "config.yaml")
 CONFIG_EXAMPLE = os.path.join(DATA_DIR, "config.yaml.example")
+CONFIG_EXAMPLE_ALT = os.path.join(DATA_DIR, "assets", "apple-music-downloader", "config.yaml.example")
 
 APP_DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "AppleMusicDownloader")
 
@@ -49,8 +50,13 @@ def get_config_path():
     """返回配置文件路径：若不存在则从示例复制"""
     os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
     if not os.path.isfile(CONFIG_FILE):
+        example = None
         if os.path.isfile(CONFIG_EXAMPLE):
-            shutil.copy(CONFIG_EXAMPLE, CONFIG_FILE)
+            example = CONFIG_EXAMPLE
+        elif os.path.isfile(CONFIG_EXAMPLE_ALT):
+            example = CONFIG_EXAMPLE_ALT
+        if example:
+            shutil.copy(example, CONFIG_FILE)
             session_log.write(f"[INFO] 默认配置已复制到: {CONFIG_FILE}")
         else:
             session_log.write(f"[WARN] 未找到示例: {CONFIG_EXAMPLE}")
