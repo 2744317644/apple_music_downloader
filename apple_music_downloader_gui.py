@@ -47,13 +47,16 @@ DL_IMAGE = "apple-music-downloader:local"
 
 def get_config_path():
     """返回配置文件路径：若不存在则从示例复制"""
+    os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
     if not os.path.isfile(CONFIG_FILE):
         if os.path.isfile(CONFIG_EXAMPLE):
-            os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
             shutil.copy(CONFIG_EXAMPLE, CONFIG_FILE)
             session_log.write(f"[INFO] 默认配置已复制到: {CONFIG_FILE}")
         else:
-            return None
+            session_log.write(f"[WARN] 未找到示例: {CONFIG_EXAMPLE}")
+    if not os.path.isfile(CONFIG_FILE):
+        session_log.write(f"[WARN] 配置文件不存在: {CONFIG_FILE}")
+        return None
     return CONFIG_FILE
 
 
