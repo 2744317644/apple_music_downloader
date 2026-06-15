@@ -739,6 +739,7 @@ class SetupPage(AppPage):
         return True, msg
 
     def go_next(self):
+        session_log._history.clear()
         db_file = os.path.join(
             os.path.abspath(WRAPPER_DATA_DIR),
             "data", "com.apple.android.music", "files", "mpl_db", "kvs.sqlitedb"
