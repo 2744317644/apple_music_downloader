@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import time
+import shutil
 import queue
 import atexit
 import tempfile
@@ -23,7 +24,8 @@ else:
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     DATA_DIR = SCRIPT_DIR
 DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
-CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.yaml")
+CONFIG_FILE = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "AppleMusicDownloader", "config.yaml")
+CONFIG_EXAMPLE = os.path.join(SCRIPT_DIR, "config.yaml.example")
 
 APP_DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "AppleMusicDownloader")
 
@@ -41,6 +43,27 @@ REGISTRY_MIRROR = os.environ.get("REGISTRY_MIRROR", "docker.m.daocloud.io")
 # ---- Downloader settings ----
 DL_SRC = os.environ.get("DL_SRC", os.path.join(DATA_DIR, "assets", "apple-music-downloader"))
 DL_IMAGE = "apple-music-downloader:local"
+
+
+def get_config_path():
+    """返回配置文件路径：若不存在则从示例复制"""
+    if not os.path.isfile(CONFIG_FILE):
+        if os.path.isfile(CONFIG_EXAMPLE):
+            os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+            shutil.copy(CONFIG_EXAMPLE, CONFIG_FILE)
+        else:
+            return None
+    return CONFIG_FILE
+
+
+def load_config_content():
+    """加载配置文件内容"""
+    path = get_config_path()
+    if path:
+        with open(path, 'r', encoding='utf-8') as f:
+            return f.read()
+    return ""
+
 
 FONT_FAMILY = None
 MONO_FAMILY = "Consolas"
@@ -325,7 +348,7 @@ class AppleMusicApp(ctk.CTk):
         self.container.pack(fill="both", expand=True)
 
         self.frames = {}
-        for F in (SetupPage, LoginPage, MainPage):
+        for F in (SetupPage, LoginPage, TabbedContainer):
             frame = F(self.container, self)
             self.frames[F.__name__] = frame
             frame.place(relx=0, rely=0, relwidth=1, relheight=1)
@@ -551,7 +574,7 @@ class SetupPage(AppPage):
         if not os.path.isfile(db_file):
             self.app.show_frame("LoginPage")
         else:
-            self.app.show_frame("MainPage")
+            self.app.show_frame("TabbedContainer")
 
 
 class LoginPage(AppPage):
@@ -652,7 +675,7 @@ class LoginPage(AppPage):
             self.status_label.configure(text="Login successful", text_color=self.c("success"))
             ok2, _ = do_start_wrapper()
             self.app.wrapper_ready = ok2
-            self.after(1000, lambda: self.app.show_frame("MainPage"))
+            self.after(1000, lambda: self.app.show_frame("TabbedContainer"))
         else:
             self.status_label.configure(text=msg, text_color=self.c("error"))
             self.login_btn.configure(state="normal")
@@ -665,6 +688,75 @@ MODE_SPECS = [
     ("atmos",       "杜比全景声",      "--atmos {url}"),
     ("aac",         "AAC",             "--aac --aac-type {aac_type} {url}"),
 ]
+
+
+class TabbedContainer(AppPage):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self.current_tab = "download"
+        c = app.colors
+        f = FONT_FAMILY
+
+        self.sidebar = ctk.CTkFrame(self, fg_color=c["card"], width=140, corner_radius=0,
+                                    border_color=c["divider"], border_width=1)
+        self.sidebar.pack(side="left", fill="y")
+        self.sidebar.pack_propagate(False)
+
+        logo_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        logo_frame.pack(fill="x", padx=12, pady=(16, 12))
+        ctk.CTkLabel(logo_frame, text="Apple Music",
+                     font=ctk.CTkFont(family=f, size=13, weight="bold"),
+                     text_color=c["text"]).pack(anchor="w")
+        ctk.CTkLabel(logo_frame, text="Downloader",
+                     font=ctk.CTkFont(family=f, size=10),
+                     text_color=c["text_secondary"]).pack(anchor="w")
+
+        self.tab_btns = {}
+        tabs = [("download", "下载"), ("config", "配置")]
+        for key, label in tabs:
+            btn = ctk.CTkButton(self.sidebar, text=label, anchor="w",
+                                fg_color="transparent", hover_color=c["input_bg"],
+                                text_color=c["text"],
+                                font=ctk.CTkFont(family=f, size=13),
+                                corner_radius=6, height=34,
+                                command=lambda k=key: self.show_tab(k))
+            btn.pack(fill="x", padx=8, pady=(0, 2))
+            self.tab_btns[key] = btn
+
+        self.content = ctk.CTkFrame(self, fg_color="transparent")
+        self.content.pack(side="left", fill="both", expand=True)
+
+        self.pages = {}
+        self.main_page = MainPage(self.content, app)
+        self.pages["download"] = self.main_page
+        self.main_page.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        self.config_page = ConfigPage(self.content, app)
+        self.pages["config"] = self.config_page
+        self.config_page.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        self.show_tab("download")
+
+    def show_tab(self, key):
+        self.current_tab = key
+        c = self.app.colors
+        for k, btn in self.tab_btns.items():
+            if k == key:
+                btn.configure(fg_color=c["primary"], text_color="white",
+                              hover_color=c["primary_hover"])
+            else:
+                btn.configure(fg_color="transparent", text_color=c["text"],
+                              hover_color=c["input_bg"])
+        page = self.pages[key]
+        page.tkraise()
+        if hasattr(page, "on_show"):
+            page.on_show()
+
+    def on_show(self):
+        if self.current_tab in self.pages:
+            page = self.pages[self.current_tab]
+            if hasattr(page, "on_show"):
+                page.on_show()
 
 
 class MainPage(AppPage):
@@ -1108,17 +1200,13 @@ class MainPage(AppPage):
         threading.Thread(target=self._dl_thread, args=(args,), daemon=True).start()
 
     def _dl_thread(self, arguments):
-        try:
-            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+        config_path = get_config_path()
+        if config_path:
+            with open(config_path, 'r', encoding='utf-8') as f:
                 config_content = f.read()
-        except FileNotFoundError:
-            self.log("[WARN] config.yaml not found, using defaults")
-            config_path = os.path.join(DATA_DIR, "assets", "apple-music-downloader", "config.yaml.example")
-            if os.path.isfile(config_path):
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    config_content = f.read()
-            else:
-                config_content = ""
+        else:
+            self.log("[WARN] No config.yaml found, using defaults")
+            config_content = ""
 
         for folder_key in ['alac-save-folder', 'atmos-save-folder', 'aac-save-folder', 'mv-save-folder']:
             config_content = re.sub(
@@ -1166,6 +1254,85 @@ class MainPage(AppPage):
                 pass
         self.log(f"Done - output: {DOWNLOAD_DIR}")
         self.after(0, self._on_download_done)
+
+
+class ConfigPage(AppPage):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self.build_ui()
+
+    def build_ui(self):
+        c = self.app.colors
+        f = FONT_FAMILY
+
+        topbar = ctk.CTkFrame(self, fg_color=c["card"], height=44, corner_radius=0,
+                              border_color=c["divider"], border_width=1)
+        topbar.pack(fill="x")
+        topbar.pack_propagate(False)
+
+        ctk.CTkLabel(topbar, text="配置文件",
+                     font=ctk.CTkFont(family=f, size=16, weight="bold"),
+                     text_color=c["text"]).pack(side="left", padx=16, pady=11)
+
+        btn_frame = ctk.CTkFrame(topbar, fg_color="transparent")
+        btn_frame.pack(side="right", padx=6)
+
+        self.reload_btn = ctk.CTkButton(btn_frame, text="重新加载", width=72, height=30,
+                                        corner_radius=6,
+                                        fg_color=c["input_bg"], hover_color=c["divider"],
+                                        text_color=c["text"],
+                                        font=ctk.CTkFont(family=f, size=12),
+                                        command=self._reload_config)
+        self.reload_btn.pack(side="left", padx=(0, 6))
+
+        self.save_btn = ctk.CTkButton(btn_frame, text="保存", width=60, height=30,
+                                      corner_radius=6,
+                                      fg_color=c["primary"], hover_color=c["primary_hover"],
+                                      text_color="white",
+                                      font=ctk.CTkFont(family=f, size=12, weight="bold"),
+                                      command=self._save_config)
+        self.save_btn.pack(side="left")
+
+        self.status_label = ctk.CTkLabel(self, text="",
+                                         font=ctk.CTkFont(family=f, size=11),
+                                         text_color=c["text_secondary"])
+        self.status_label.pack(fill="x", padx=12, pady=(4, 0))
+
+        self.config_editor = ctk.CTkTextbox(self,
+                                            fg_color=c["card"], text_color=c["text"],
+                                            border_color=c["border"], border_width=1,
+                                            corner_radius=10,
+                                            font=ctk.CTkFont(family=MONO_FAMILY, size=12),
+                                            wrap="none")
+        self.config_editor.pack(fill="both", expand=True, padx=8, pady=8)
+
+    def on_show(self):
+        self._reload_config()
+
+    def _reload_config(self):
+        content = load_config_content()
+        self.config_editor.configure(state="normal")
+        self.config_editor.delete("1.0", "end")
+        self.config_editor.insert("1.0", content)
+        self.config_editor.configure(state="normal")
+        path = get_config_path()
+        if path:
+            self.status_label.configure(text=f"来源: {path}", text_color=self.c("text_secondary"))
+        else:
+            self.status_label.configure(text="未找到配置文件", text_color=self.c("error"))
+
+    def _save_config(self):
+        content = self.config_editor.get("1.0", "end-1c")
+        try:
+            os.makedirs(APP_DATA_DIR, exist_ok=True)
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                f.write(content)
+            self.status_label.configure(
+                text=f"已保存到: {CONFIG_FILE}",
+                text_color=self.c("success")
+            )
+        except Exception as e:
+            self.status_label.configure(text=f"保存失败: {e}", text_color=self.c("error"))
 
 
 def main():
