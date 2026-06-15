@@ -761,6 +761,17 @@ class LoginPage(AppPage):
         container = ctk.CTkFrame(self, fg_color="transparent")
         container.pack(expand=True, fill="both", padx=80, pady=60)
 
+        lang_row = ctk.CTkFrame(container, fg_color="transparent")
+        lang_row.pack(fill="x", pady=(0, 16))
+        lang_label_text = "中文" if self.app.lang == "zh" else "English"
+        self._login_lang_btn = ctk.CTkButton(lang_row, text=lang_label_text, anchor="center",
+                                             fg_color=c["input_bg"], hover_color=c["divider"],
+                                             text_color=c["text"],
+                                             font=ctk.CTkFont(family=f, size=11),
+                                             corner_radius=6, height=28, width=60,
+                                             command=self._toggle_lang)
+        self._login_lang_btn.pack(side="right")
+
         lbl = ctk.CTkLabel(container, text=self.t("sign_in"),
                            font=ctk.CTkFont(family=f, size=26, weight="bold"),
                            text_color=c["text"]); lbl.pack(pady=(40, 8)); self._reg(lbl, "sign_in")
@@ -826,6 +837,12 @@ class LoginPage(AppPage):
         self.status_label.configure(text="")
         self.progress.set(0)
         self.login_btn.configure(state="normal")
+
+    def _toggle_lang(self):
+        new_lang = "en" if self.app.lang == "zh" else "zh"
+        self.app.set_language(new_lang)
+        if hasattr(self, '_login_lang_btn') and self._login_lang_btn.winfo_exists():
+            self._login_lang_btn.configure(text="中文" if new_lang == "zh" else "English")
 
     def do_login(self):
         username = self.username_entry.get().strip()
