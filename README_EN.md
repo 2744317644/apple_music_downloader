@@ -1,5 +1,7 @@
 # Apple Music ALAC Downloader
 
+English | [中文](README.md)
+
 > Apple Music lossless ALAC / Dolby Atmos / AAC downloader
 
 ## Acknowledgments
