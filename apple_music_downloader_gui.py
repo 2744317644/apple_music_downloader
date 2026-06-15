@@ -960,6 +960,9 @@ class TabbedContainer(AppPage):
         for key, i18n_key in self._tab_keys:
             if key in self.tab_btns:
                 self.tab_btns[key].configure(text=self.t(i18n_key))
+        for page in self.pages.values():
+            if hasattr(page, "refresh_language"):
+                page.refresh_language()
 
 
 class MainPage(AppPage):
@@ -1072,11 +1075,13 @@ class MainPage(AppPage):
         lbl = ctk.CTkLabel(footer, text=self.t("output"),
                            font=ctk.CTkFont(family=f, size=12, weight="bold"),
                            text_color=c["text"]); lbl.pack(side="left"); self._reg(lbl, "output")
-        ctk.CTkButton(footer, text=self.t("clear"), width=48, height=22,
-                      fg_color=c["card"], hover_color=c["divider"],
-                      text_color=c["text_secondary"], corner_radius=4,
-                      font=ctk.CTkFont(family=f, size=10),
-                      command=self._clear_console).pack(side="right")
+        clear_footer_btn = ctk.CTkButton(footer, text=self.t("clear"), width=48, height=22,
+                                         fg_color=c["card"], hover_color=c["divider"],
+                                         text_color=c["text_secondary"], corner_radius=4,
+                                         font=ctk.CTkFont(family=f, size=10),
+                                         command=self._clear_console)
+        clear_footer_btn.pack(side="right")
+        self._reg(clear_footer_btn, "clear")
 
         self.status_bar = ctk.CTkFrame(self, fg_color=c["card"], height=26, corner_radius=0,
                                        border_color=c["divider"], border_width=1)
@@ -1209,6 +1214,12 @@ class MainPage(AppPage):
     def refresh_language(self):
         super().refresh_language()
         self._output_path_label.configure(text=self.t("output_to", path=DOWNLOAD_DIR))
+        current_key = self._mode_var.get()
+        name = self._mode_name(current_key)
+        self._mode_entry.configure(state="normal")
+        self._mode_entry.delete(0, "end")
+        self._mode_entry.insert(0, name)
+        self._mode_entry.configure(state="readonly")
 
     def _poll_status(self):
         try:
