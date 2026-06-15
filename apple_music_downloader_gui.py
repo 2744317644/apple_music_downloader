@@ -904,8 +904,8 @@ class TabbedContainer(AppPage):
 
         lang_label = "English" if self.app.lang == "zh" else "中文"
         self._lang_btn = ctk.CTkButton(space, text=lang_label, anchor="center",
-                                       fg_color="transparent", hover_color=c["input_bg"],
-                                       text_color=c["text_secondary"],
+                                       fg_color=c["input_bg"], hover_color=c["divider"],
+                                       text_color=c["text"],
                                        font=ctk.CTkFont(family=f, size=11),
                                        corner_radius=6, height=28,
                                        command=self._toggle_lang)
