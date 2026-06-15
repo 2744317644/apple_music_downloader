@@ -989,6 +989,8 @@ class MainPage(AppPage):
         self._popup = None
         self._popup_dismiss_id = None
         self._reposition_timer = None
+        self._dl_proc = None
+        self._downloading = False
         self.build_ui()
 
     def build_ui(self):
@@ -1127,10 +1129,7 @@ class MainPage(AppPage):
         os.startfile(DOWNLOAD_DIR)
 
     def _on_download_done(self):
-        try:
-            self._go_btn.configure(state="normal", text=self.t("download"))
-        except Exception:
-            pass
+        self._reset_download_state()
         self._clear_url()
 
     def _paste_url(self, event=None):
@@ -1407,6 +1406,10 @@ class MainPage(AppPage):
         return True
 
     def _start_download(self):
+        if self._downloading:
+            self._cancel_download()
+            return
+
         key = self._mode_var.get()
         spec = next(m for m in MODE_SPECS if m[0] == key)
         tmpl = spec[2]
@@ -1435,8 +1438,25 @@ class MainPage(AppPage):
         if not self._ensure_prereqs():
             return
         self.log(f">>> {title}")
-        self._go_btn.configure(state="disabled", text=self.t("running_btn"))
+        self._downloading = True
+        self._go_btn.configure(fg_color=self.c("error"), hover_color="#CC2F26",
+                               text=self.t("running_btn"))
         threading.Thread(target=self._dl_thread, args=(args,), daemon=True).start()
+
+    def _cancel_download(self):
+        if self._dl_proc and self._dl_proc.poll() is None:
+            self._dl_proc.kill()
+            self.log("[CANCEL] Download cancelled")
+        self._reset_download_state()
+
+    def _reset_download_state(self):
+        self._downloading = False
+        self._dl_proc = None
+        try:
+            self._go_btn.configure(fg_color=self.c("primary"), hover_color=self.c("primary_hover"),
+                                   text=self.t("download"))
+        except Exception:
+            pass
 
     def _dl_thread(self, arguments):
         config_path = get_config_path()
@@ -1470,22 +1490,26 @@ class MainPage(AppPage):
                                     stderr=subprocess.STDOUT,
                                     text=True, encoding="utf-8", errors="replace",
                                     startupinfo=_SI, creationflags=_CF)
+            self._dl_proc = proc
             buf = ""
-            for ch in iter(lambda: proc.stdout.read(1), ""):
-                if ch in ("\r", "\n"):
-                    if buf.strip():
-                        if "%" in buf:
-                            self.log_replace(buf.strip())
-                        else:
-                            self.log(buf.strip())
-                    buf = ""
-                else:
-                    buf += ch
-            if buf.strip():
-                self.log(buf.strip())
-            proc.wait()
-            if proc.returncode != 0:
-                self.log(f"Exit code: {proc.returncode}")
+            try:
+                for ch in iter(lambda: proc.stdout.read(1), ""):
+                    if ch in ("\r", "\n"):
+                        if buf.strip():
+                            if "%" in buf:
+                                self.log_replace(buf.strip())
+                            else:
+                                self.log(buf.strip())
+                        buf = ""
+                    else:
+                        buf += ch
+                if buf.strip():
+                    self.log(buf.strip())
+                proc.wait()
+                if proc.returncode != 0:
+                    self.log(f"Exit code: {proc.returncode}")
+            except Exception:
+                pass
         finally:
             try:
                 os.remove(tmp_config)
