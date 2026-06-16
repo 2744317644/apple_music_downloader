@@ -664,8 +664,9 @@ def _make_folder(size=16, color="#86868B"):
 
 class AppleMusicApp(ctk.CTk):
     def __init__(self):
+        ctk.set_appearance_mode("light")
+        ctk.set_default_color_theme("blue")
         super().__init__()
-        self.withdraw()
         self.colors = APPLE_LIGHT
         self.configure(fg_color=self.colors["background"])
         self.title("Apple Music Downloader")
@@ -682,9 +683,6 @@ class AppleMusicApp(ctk.CTk):
                 self.iconbitmap(APP_ICON)
             except Exception:
                 pass
-
-        ctk.set_appearance_mode("light")
-        ctk.set_default_color_theme("blue")
 
         self.lang = DEFAULT_LANG
 
@@ -704,7 +702,6 @@ class AppleMusicApp(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         os.makedirs(APP_DATA_DIR, exist_ok=True)
         get_config_path()
-        self.after(0, self.deiconify)
 
     def t(self, key, **fmt):
         value = I18N.get(self.lang, {}).get(key, key)
