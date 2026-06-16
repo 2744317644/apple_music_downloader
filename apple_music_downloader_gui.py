@@ -665,6 +665,8 @@ def _make_folder(size=16, color="#86868B"):
 class AppleMusicApp(ctk.CTk):
     def __init__(self):
         super().__init__()
+        self.colors = APPLE_LIGHT
+        self.configure(fg_color=self.colors["background"])
         self.title("Apple Music Downloader")
         self.geometry("880x660")
         self.minsize(640, 480)
@@ -684,9 +686,7 @@ class AppleMusicApp(ctk.CTk):
         ctk.set_appearance_mode("light")
         ctk.set_default_color_theme("blue")
 
-        self.colors = APPLE_LIGHT
         self.lang = DEFAULT_LANG
-        self._setup_theme()
 
         self.wrapper_ready = False
         self.setup_done = False
