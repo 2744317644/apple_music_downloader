@@ -13,6 +13,7 @@ import atexit
 import tempfile
 import threading
 import subprocess
+import ctypes
 from datetime import datetime
 import customtkinter as ctk
 from PIL import Image, ImageDraw
@@ -702,6 +703,26 @@ class AppleMusicApp(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         os.makedirs(APP_DATA_DIR, exist_ok=True)
         get_config_path()
+
+        self._make_layered_window()
+
+    def _make_layered_window(self):
+        """Make window WS_EX_LAYERED so DWM composites it, skipping GDI WM_ERASEBKGND."""
+        if os.name != 'nt':
+            return
+        try:
+            hwnd = self.winfo_id()
+            if not hwnd:
+                return
+            GWL_EXSTYLE = -20
+            WS_EX_LAYERED = 0x00080000
+            LWA_ALPHA = 0x00000002
+            user32 = ctypes.windll.user32
+            style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED)
+            user32.SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA)
+        except Exception:
+            pass
 
     def t(self, key, **fmt):
         value = I18N.get(self.lang, {}).get(key, key)
