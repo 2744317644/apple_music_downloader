@@ -733,7 +733,7 @@ class AppleMusicApp(ctk.CTk):
 
 class AppPage(ctk.CTkFrame):
     def __init__(self, parent, app):
-        super().__init__(parent, fg_color=self.app.colors["background"])
+        super().__init__(parent, fg_color=app.colors["background"])
         self.app = app
         self._i18n_refs = []
 
