@@ -36,7 +36,7 @@ Thanks to the authors and contributors of the above projects.
 - **Python 3.7+**
 - **Docker** (must be installed and running)
 
-### Additional GUI dependencies
+### Additional CLI dependencies
 
 ```bash
 pip install -r requirements.txt
