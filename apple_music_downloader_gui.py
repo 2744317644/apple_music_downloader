@@ -1132,25 +1132,32 @@ class LoginPage(AppPage):
         self.after(0, lambda: self._login_done(ok, msg))
 
     def _login_done(self, ok, msg):
-        self.progress.set(1.0)
         if ok:
-            self.status_label.configure(text="Login successful", text_color=self.c("success"))
-            self.log("[OK] Login done, starting wrapper in background...")
+            self.progress.set(0.7)
+            self.status_label.configure(text="Starting wrapper...", text_color=self.c("text_secondary"))
+            self.log("[OK] Login done, starting wrapper...")
             threading.Thread(target=self._post_login_start_wrapper, daemon=True).start()
         else:
+            self.progress.set(1.0)
             self.status_label.configure(text=msg, text_color=self.c("error"))
             self.login_btn.configure(state="normal")
 
     def _post_login_start_wrapper(self):
+        self.after(0, lambda: self.status_label.configure(text="Initializing wrapper container..."))
         ok2, msg2 = do_start_wrapper(log_callback=self.log)
         self.after(0, lambda: self._post_login_done(ok2))
 
     def _post_login_done(self, ok2):
         self.app.wrapper_ready = ok2
+        self.progress.set(1.0)
         if self._flush_timer:
             self.after_cancel(self._flush_timer)
             self._flush_timer = None
-        self.after(1000, lambda: self.app.show_frame("TabbedContainer"))
+        self.status_label.configure(
+            text="Wrapper running" if ok2 else "Wrapper start failed",
+            text_color=self.c("success") if ok2 else self.c("error")
+        )
+        self.after(300, lambda: self.app.show_frame("TabbedContainer"))
 
 
 MODE_SPECS = [
