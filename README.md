@@ -36,7 +36,7 @@
 - **Python 3.7+**
 - **Docker**（必须安装且可正常运行）
 
-### GUI 版本额外依赖
+### CLI 版本额外依赖
 
 ```bash
 pip install -r requirements.txt
