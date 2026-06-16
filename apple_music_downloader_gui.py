@@ -665,12 +665,12 @@ def _make_folder(size=16, color="#86868B"):
 class AppleMusicApp(ctk.CTk):
     def __init__(self):
         super().__init__()
+        self.withdraw()
         self.colors = APPLE_LIGHT
         self.configure(fg_color=self.colors["background"])
         self.title("Apple Music Downloader")
         self.geometry("880x660")
         self.minsize(640, 480)
-        self._center_window()
 
         if getattr(sys, 'frozen', False):
             try:
@@ -704,16 +704,7 @@ class AppleMusicApp(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         os.makedirs(APP_DATA_DIR, exist_ok=True)
         get_config_path()
-
-    def _center_window(self):
-        self.update_idletasks()
-        w = self.winfo_width()
-        h = self.winfo_height()
-        sw = self.winfo_screenwidth()
-        sh = self.winfo_screenheight()
-        x = (sw - w) // 2
-        y = (sh - h) // 2
-        self.geometry(f"+{x}+{y}")
+        self.deiconify()
 
     def t(self, key, **fmt):
         value = I18N.get(self.lang, {}).get(key, key)
@@ -734,9 +725,6 @@ class AppleMusicApp(ctk.CTk):
         stop_wrapper()
         session_log.close()
         self.destroy()
-
-    def _setup_theme(self):
-        self.configure(fg_color=self.colors["background"])
 
     def show_frame(self, name):
         frame = self.frames[name]
