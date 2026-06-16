@@ -13,6 +13,7 @@ import atexit
 import tempfile
 import threading
 import subprocess
+import ctypes
 from datetime import datetime
 import customtkinter as ctk
 from PIL import Image, ImageDraw
@@ -197,6 +198,12 @@ I18N = {
         "mode_playlist": "播放列表",
         "mode_atmos": "杜比全景声",
         "mode_aac": "AAC",
+        "use_local_image_title": "本地镜像",
+        "use_local_image_msg": "检测到需要构建 Docker 镜像。\n\n是否使用本地 .tar 镜像文件导入？\n\n选择「是」将打开目录选择器，\n选择「否」将从源码构建镜像。",
+        "select_image_dir_title": "选择镜像目录",
+        "export_images": "导出镜像",
+        "export_done": "导出完成",
+        "export_failed": "导出失败",
     },
     "en": {
         "app_title": "Apple Music Downloader",
@@ -262,6 +269,12 @@ I18N = {
         "mode_playlist": "Playlist",
         "mode_atmos": "Dolby Atmos",
         "mode_aac": "AAC",
+        "use_local_image_title": "Local Image",
+        "use_local_image_msg": "Docker images need to be built.\n\nUse local .tar image files instead?\n\nClick 'Yes' to select a directory,\nclick 'No' to build from source.",
+        "select_image_dir_title": "Select Image Directory",
+        "export_images": "Export Images",
+        "export_done": "Export Done",
+        "export_failed": "Export Failed",
     },
 }
 
@@ -294,6 +307,117 @@ def wrapper_running():
     return len(out) > 0
 
 
+def load_docker_image(tar_path, log_callback=None):
+    """Load a Docker image from a local .tar file."""
+    if not os.path.isfile(tar_path):
+        msg = f"File not found: {tar_path}"
+        if log_callback:
+            log_callback(f"[ERROR] {msg}")
+        return False, msg
+    if log_callback:
+        log_callback(f"Loading image from: {tar_path}")
+    try:
+        result = subprocess.run(
+            ["docker", "load", "-i", tar_path],
+            capture_output=True, text=True,
+            startupinfo=_SI, creationflags=_CF
+        )
+        if result.returncode == 0:
+            msg = result.stdout.strip()
+            if log_callback:
+                log_callback(f"[OK] {msg}")
+            return True, msg
+        else:
+            err = result.stderr.strip() or result.stdout.strip()
+            if log_callback:
+                log_callback(f"[ERROR] docker load failed: {err[:500]}")
+            return False, err[:500]
+    except Exception as e:
+        msg = str(e)
+        if log_callback:
+            log_callback(f"[ERROR] {msg}")
+        return False, msg
+
+
+def load_images_from_dir(image_dir, log_callback=None):
+    """Load all .tar files from a directory as Docker images."""
+    if not os.path.isdir(image_dir):
+        if log_callback:
+            log_callback(f"[ERROR] Directory not found: {image_dir}")
+        return
+    tar_files = sorted([f for f in os.listdir(image_dir) if f.endswith('.tar')])
+    if not tar_files:
+        if log_callback:
+            log_callback(f"[WARN] No .tar files found in: {image_dir}")
+        return
+    if log_callback:
+        log_callback(f"Found {len(tar_files)} .tar file(s) in: {image_dir}")
+    for tf in tar_files:
+        load_docker_image(os.path.join(image_dir, tf), log_callback)
+    _auto_tag_images(log_callback)
+
+
+def _get_all_image_repos():
+    try:
+        out = subprocess.run(
+            ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"],
+            capture_output=True, text=True,
+            startupinfo=_SI, creationflags=_CF
+        )
+        return set(line.strip() for line in out.stdout.strip().split('\n') if line.strip())
+    except Exception:
+        return set()
+
+
+def _auto_tag_images(log_callback=None):
+    tag_map = [
+        (WRAPPER_IMAGE, ["wrapper"]),
+        (DL_IMAGE, ["apple-music-downloader", "am-downloader", "downloader"]),
+    ]
+    for target, hints in tag_map:
+        if _run("docker", "images", "-q", target, silent=True):
+            continue
+        for repo_tag in _get_all_image_repos():
+            if repo_tag == target:
+                continue
+            if any(h in repo_tag.lower() for h in hints):
+                if log_callback:
+                    log_callback(f"Auto-tagging {repo_tag} -> {target}")
+                _live("docker", "tag", repo_tag, target)
+                break
+
+
+def export_images(output_dir=None, log_callback=None):
+    if output_dir is None:
+        output_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+    os.makedirs(output_dir, exist_ok=True)
+    wrapper_tar = os.path.join(output_dir, "wrapper_local.tar")
+    dl_tar = os.path.join(output_dir, "apple-music-downloader_local.tar")
+    all_ok = True
+    for image, tar_path, label in [
+        (WRAPPER_IMAGE, wrapper_tar, "Wrapper"),
+        (DL_IMAGE, dl_tar, "Downloader"),
+    ]:
+        if not _run("docker", "images", "-q", image, silent=True):
+            if log_callback:
+                log_callback(f"[WARN] Image '{image}' not found, skipping")
+            all_ok = False
+            continue
+        if log_callback:
+            log_callback(f"Exporting {label}: {image} -> {tar_path}")
+        code = _live("docker", "save", "-o", tar_path, image)
+        if code == 0:
+            if log_callback:
+                log_callback(f"[OK] Exported: {tar_path}")
+        else:
+            if log_callback:
+                log_callback(f"[ERROR] Failed to export {image}")
+            all_ok = False
+    if all_ok and log_callback:
+        log_callback(f"[OK] All images exported to: {output_dir}")
+    return all_ok
+
+
 def build_wrapper_image(log_callback=None):
     src = WRAPPER_SRC
     if not os.path.isdir(src):
@@ -324,6 +448,8 @@ def build_wrapper_image(log_callback=None):
 
 
 def wrapper_login(username, password, log_callback=None):
+    if log_callback:
+        log_callback("Starting login container...")
     os.makedirs(WRAPPER_DATA_DIR, exist_ok=True)
     _run("docker", "rm", "-f", f"{WRAPPER_NAME}-login", silent=True)
     db_file = os.path.join(
@@ -332,6 +458,8 @@ def wrapper_login(username, password, log_callback=None):
     )
     if os.path.isfile(db_file):
         os.remove(db_file)
+    if log_callback:
+        log_callback("Launching wrapper login container...")
     code = _live(
         "docker", "run", "-dit",
         "--name", f"{WRAPPER_NAME}-login",
@@ -345,26 +473,67 @@ def wrapper_login(username, password, log_callback=None):
     )
     if code != 0:
         return False, "Failed to start login container"
+    if log_callback:
+        log_callback("Waiting for credential database...")
     waited = 0
+    last_lines = 0
     while not os.path.isfile(db_file) and waited < 120:
         time.sleep(2)
         waited += 2
+        if log_callback:
+            out = _run("docker", "logs", f"{WRAPPER_NAME}-login", silent=True)
+            if out:
+                lines = out.split('\n')
+                if len(lines) > last_lines:
+                    for line in lines[last_lines:]:
+                        s = line.strip()
+                        if s:
+                            log_callback(s)
+                    last_lines = len(lines)
     if not os.path.isfile(db_file):
         exit_code = _run("docker", "inspect", "-f", "{{.State.ExitCode}}", f"{WRAPPER_NAME}-login", silent=True)
         logs = _run("docker", "logs", f"{WRAPPER_NAME}-login")
+        if log_callback:
+            log_callback(f"[ERROR] Login failed (exit={exit_code})")
+            if logs:
+                lines = logs.split('\n')
+                unseen = lines[last_lines:] if len(lines) > last_lines else lines
+                for line in unseen:
+                    s = line.strip()
+                    if s:
+                        log_callback(s)
         _run("docker", "rm", "-f", f"{WRAPPER_NAME}-login", silent=True)
         return False, f"Login failed (exit={exit_code}). {logs}"
+    if log_callback:
+        log_callback("[OK] Credential database created")
     fsi_file = os.path.join(
         os.path.abspath(WRAPPER_DATA_DIR),
         "data", "com.apple.android.music", "files", "fsi.pdat"
     )
+    if log_callback:
+        log_callback("Waiting for FairPlay registration...")
     waited = 0
+    last_lines = 0
     while not os.path.isfile(fsi_file) and waited < 120:
         time.sleep(2)
         waited += 2
+        if log_callback:
+            out = _run("docker", "logs", f"{WRAPPER_NAME}-login", silent=True)
+            if out:
+                lines = out.split('\n')
+                if len(lines) > last_lines:
+                    for line in lines[last_lines:]:
+                        s = line.strip()
+                        if s:
+                            log_callback(s)
+                    last_lines = len(lines)
     _run("docker", "rm", "-f", f"{WRAPPER_NAME}-login", silent=True)
     if os.path.isfile(fsi_file):
+        if log_callback:
+            log_callback("[OK] FairPlay registered")
         return True, "Login successful. Credentials cached."
+    if log_callback:
+        log_callback("[WARN] FairPlay not registered, may retry on first download")
     return False, "Login may have failed."
 
 
@@ -379,6 +548,8 @@ def do_start_wrapper(log_callback=None):
     if not os.path.isfile(db_file):
         return False, "NEED_LOGIN"
     _run("docker", "rm", "-f", WRAPPER_NAME, silent=True)
+    if log_callback:
+        log_callback("Launching wrapper container...")
     code = _live(
         "docker", "run", "-dit",
         "--name", WRAPPER_NAME,
@@ -393,11 +564,41 @@ def do_start_wrapper(log_callback=None):
     )
     if code != 0:
         return False, "Failed to start wrapper"
-    time.sleep(15)
+    if log_callback:
+        log_callback("Waiting for wrapper to initialize...")
+    last_lines = 0
+    for _ in range(8):
+        time.sleep(2)
+        if wrapper_running():
+            # stream any remaining logs
+            if log_callback:
+                out = _run("docker", "logs", WRAPPER_NAME, silent=True)
+                if out:
+                    lines = out.split('\n')
+                    if len(lines) > last_lines:
+                        for line in lines[last_lines:]:
+                            s = line.strip()
+                            if s:
+                                log_callback(s)
+        if log_callback:
+            out = _run("docker", "logs", WRAPPER_NAME, silent=True)
+            if out:
+                lines = out.split('\n')
+                if len(lines) > last_lines:
+                    for line in lines[last_lines:]:
+                        s = line.strip()
+                        if s:
+                            log_callback(s)
+                    last_lines = len(lines)
     if wrapper_running():
         return True, f"Wrapper running (ports: {DECRYPT_PORT}/{M3U8_PORT}/{ACCOUNT_PORT})"
     else:
         logs = _run("docker", "logs", WRAPPER_NAME)
+        if log_callback and logs:
+            for line in logs.split('\n'):
+                s = line.strip()
+                if s:
+                    log_callback(s)
         if os.path.isfile(db_file):
             os.remove(db_file)
         return False, f"NEED_LOGIN\n{logs}"
@@ -464,10 +665,14 @@ def _make_folder(size=16, color="#86868B"):
 
 class AppleMusicApp(ctk.CTk):
     def __init__(self):
+        ctk.set_appearance_mode("light")
+        ctk.set_default_color_theme("blue")
         super().__init__()
+        self.colors = APPLE_LIGHT
+        self.configure(fg_color=self.colors["background"])
         self.title("Apple Music Downloader")
-        self.geometry("800x600")
-        self.minsize(600, 450)
+        self.geometry("880x660")
+        self.minsize(640, 480)
 
         if getattr(sys, 'frozen', False):
             try:
@@ -480,17 +685,12 @@ class AppleMusicApp(ctk.CTk):
             except Exception:
                 pass
 
-        ctk.set_appearance_mode("light")
-        ctk.set_default_color_theme("blue")
-
-        self.colors = APPLE_LIGHT
         self.lang = DEFAULT_LANG
-        self._setup_theme()
 
         self.wrapper_ready = False
         self.setup_done = False
 
-        self.container = ctk.CTkFrame(self, fg_color="transparent")
+        self.container = ctk.CTkFrame(self, fg_color=self.colors["background"])
         self.container.pack(fill="both", expand=True)
 
         self.frames = {}
@@ -503,6 +703,26 @@ class AppleMusicApp(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         os.makedirs(APP_DATA_DIR, exist_ok=True)
         get_config_path()
+
+        self._make_layered_window()
+
+    def _make_layered_window(self):
+        """Make window WS_EX_LAYERED so DWM composites it, skipping GDI WM_ERASEBKGND."""
+        if os.name != 'nt':
+            return
+        try:
+            hwnd = self.winfo_id()
+            if not hwnd:
+                return
+            GWL_EXSTYLE = -20
+            WS_EX_LAYERED = 0x00080000
+            LWA_ALPHA = 0x00000002
+            user32 = ctypes.windll.user32
+            style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED)
+            user32.SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA)
+        except Exception:
+            pass
 
     def t(self, key, **fmt):
         value = I18N.get(self.lang, {}).get(key, key)
@@ -524,9 +744,6 @@ class AppleMusicApp(ctk.CTk):
         session_log.close()
         self.destroy()
 
-    def _setup_theme(self):
-        self.configure(fg_color=self.colors["background"])
-
     def show_frame(self, name):
         frame = self.frames[name]
         frame.tkraise()
@@ -537,7 +754,7 @@ class AppleMusicApp(ctk.CTk):
 
 class AppPage(ctk.CTkFrame):
     def __init__(self, parent, app):
-        super().__init__(parent, fg_color="transparent")
+        super().__init__(parent, fg_color=app.colors["background"])
         self.app = app
         self._i18n_refs = []
 
@@ -678,7 +895,41 @@ class SetupPage(AppPage):
         self.set_progress(0)
         self.retry_btn.pack_forget()
         self.start_docker_btn.pack_forget()
+
+        need_wrapper = not _run("docker", "images", "-q", WRAPPER_IMAGE, silent=True)
+        need_downloader = not _run("docker", "images", "-q", DL_IMAGE, silent=True)
+
+        if not (need_wrapper or need_downloader):
+            threading.Thread(target=self._run_setup, daemon=True).start()
+            return
+
+        # Delay dialog so SetupPage renders first
+        self.after(200, self._prompt_local_image)
+
+    def _prompt_local_image(self):
+        from tkinter import messagebox
+        answer = messagebox.askyesno(
+            self.t("use_local_image_title"),
+            self.t("use_local_image_msg")
+        )
+        if answer:
+            from tkinter import filedialog
+            image_dir = filedialog.askdirectory(
+                title=self.t("select_image_dir_title")
+            )
+            if image_dir:
+                self.log(f"Loading images from: {image_dir}")
+                self.set_status("Loading local Docker images...")
+                threading.Thread(target=self._load_images_and_setup, args=(image_dir,), daemon=True).start()
+                return
+
+        # User said no or cancelled - proceed with normal setup
         threading.Thread(target=self._run_setup, daemon=True).start()
+
+    def _load_images_and_setup(self, image_dir):
+        load_images_from_dir(image_dir, self.log)
+        self.after(0, lambda: self.set_status("Image loading done, starting checks..."))
+        self._run_setup()
 
     def _run_setup(self):
         steps = [
@@ -765,16 +1016,19 @@ class SetupPage(AppPage):
 class LoginPage(AppPage):
     def __init__(self, parent, app):
         super().__init__(parent, app)
+        self.log_text = None
+        self._log_queue = queue.Queue()
+        self._flush_timer = None
         self.build_ui()
 
     def build_ui(self):
         c = self.app.colors
         f = FONT_FAMILY
         container = ctk.CTkFrame(self, fg_color="transparent")
-        container.pack(expand=True, fill="both", padx=80, pady=60)
+        container.pack(expand=True, fill="both", padx=80, pady=30)
 
         lang_row = ctk.CTkFrame(container, fg_color="transparent")
-        lang_row.pack(fill="x", pady=(0, 16))
+        lang_row.pack(fill="x", pady=(0, 6))
         lang_label_text = "中文" if self.app.lang == "zh" else "English"
         self._login_lang_btn = ctk.CTkButton(lang_row, text=lang_label_text, anchor="center",
                                              fg_color=c["input_bg"], hover_color=c["divider"],
@@ -786,10 +1040,10 @@ class LoginPage(AppPage):
 
         lbl = ctk.CTkLabel(container, text=self.t("sign_in"),
                            font=ctk.CTkFont(family=f, size=26, weight="bold"),
-                           text_color=c["text"]); lbl.pack(pady=(40, 8)); self._reg(lbl, "sign_in")
+                            text_color=c["text"]); lbl.pack(pady=(20, 4)); self._reg(lbl, "sign_in")
         lbl = ctk.CTkLabel(container, text=self.t("tips_login"),
-                           font=ctk.CTkFont(family=f, size=13),
-                           text_color=c["text_secondary"]); lbl.pack(pady=(0, 24)); self._reg(lbl, "tips_login")
+                            font=ctk.CTkFont(family=f, size=13),
+                            text_color=c["text_secondary"]); lbl.pack(pady=(0, 12)); self._reg(lbl, "tips_login")
 
         field_frame1 = ctk.CTkFrame(container, fg_color="transparent")
         field_frame1.pack(fill="x", pady=(0, 14))
@@ -808,7 +1062,7 @@ class LoginPage(AppPage):
         self._reg(self.username_entry, "placeholder_email", "placeholder")
 
         field_frame2 = ctk.CTkFrame(container, fg_color="transparent")
-        field_frame2.pack(fill="x", pady=(0, 20))
+        field_frame2.pack(fill="x", pady=(0, 10))
         lbl = ctk.CTkLabel(field_frame2, text=self.t("password"),
                            font=ctk.CTkFont(family=f, size=14),
                            text_color=c["text_secondary"]); lbl.pack(anchor="w", pady=(0, 2)); self._reg(lbl, "password")
@@ -831,13 +1085,13 @@ class LoginPage(AppPage):
                                        corner_radius=10,
                                        font=ctk.CTkFont(family=f, size=16, weight="bold"),
                                        command=self.do_login)
-        self.login_btn.pack(pady=6)
+        self.login_btn.pack(pady=4)
         self._reg(self.login_btn, "sign_in")
 
         self.status_label = ctk.CTkLabel(container, text="",
                                           font=ctk.CTkFont(family=f, size=12),
                                           text_color=c["text_secondary"])
-        self.status_label.pack(pady=8)
+        self.status_label.pack(pady=4)
 
         self.progress = ctk.CTkProgressBar(container, width=340, height=4,
                                            progress_color=c["primary"],
@@ -845,10 +1099,45 @@ class LoginPage(AppPage):
         self.progress.pack()
         self.progress.set(0)
 
+        self.log_text = ctk.CTkTextbox(container, width=500, height=120,
+                                       fg_color=c["input_bg"],
+                                       text_color=c["text"],
+                                       border_color=c["border"],
+                                       border_width=1,
+                                       corner_radius=10,
+                                       font=ctk.CTkFont(family=MONO_FAMILY, size=11))
+        self.log_text.pack(fill="both", expand=True, pady=(10, 0))
+
+    def log(self, msg):
+        session_log.write(msg)
+        self._log_queue.put(msg)
+
+    def _flush_log(self):
+        messages = []
+        while not self._log_queue.empty():
+            try:
+                messages.append(self._log_queue.get_nowait())
+            except queue.Empty:
+                break
+        if messages and self.log_text and self.log_text.winfo_exists():
+            self.log_text.configure(state="normal")
+            for m in messages:
+                self.log_text.insert("end", m + "\n")
+            self.log_text.see("end")
+            self.log_text.configure(state="normal")
+        self._flush_timer = self.after(100, self._flush_log)
+
     def on_show(self):
         self.status_label.configure(text="")
         self.progress.set(0)
         self.login_btn.configure(state="normal")
+        if self.log_text:
+            self.log_text.configure(state="normal")
+            self.log_text.delete("1.0", "end")
+            self.log_text.configure(state="normal")
+        if self._flush_timer:
+            self.after_cancel(self._flush_timer)
+        self._flush_timer = self.after(100, self._flush_log)
 
     def _toggle_lang(self):
         new_lang = "en" if self.app.lang == "zh" else "zh"
@@ -871,19 +1160,37 @@ class LoginPage(AppPage):
     def _login_thread(self, username, password):
         self.after(0, lambda: self.status_label.configure(text="Launching login container..."))
         self.after(0, lambda: self.progress.set(0.3))
-        ok, msg = wrapper_login(username, password, log_callback=None)
+        ok, msg = wrapper_login(username, password, log_callback=self.log)
         self.after(0, lambda: self._login_done(ok, msg))
 
     def _login_done(self, ok, msg):
-        self.progress.set(1.0)
         if ok:
-            self.status_label.configure(text="Login successful", text_color=self.c("success"))
-            ok2, _ = do_start_wrapper()
-            self.app.wrapper_ready = ok2
-            self.after(1000, lambda: self.app.show_frame("TabbedContainer"))
+            self.progress.set(0.7)
+            self.status_label.configure(text="Starting wrapper...", text_color=self.c("text_secondary"))
+            self.log("[OK] Login done, starting wrapper...")
+            threading.Thread(target=self._post_login_start_wrapper, daemon=True).start()
         else:
+            self.progress.set(1.0)
             self.status_label.configure(text=msg, text_color=self.c("error"))
             self.login_btn.configure(state="normal")
+
+    def _post_login_start_wrapper(self):
+        self.after(0, lambda: self.status_label.configure(text="Initializing wrapper container..."))
+        ok2, msg2 = do_start_wrapper(log_callback=self.log)
+        self.after(0, lambda: self._post_login_done(ok2))
+
+    def _post_login_done(self, ok2):
+        self.app.wrapper_ready = ok2
+        self.progress.set(1.0)
+        if self._flush_timer:
+            self.after_cancel(self._flush_timer)
+            self._flush_timer = None
+        self.status_label.configure(
+            text="Wrapper running" if ok2 else "Wrapper start failed",
+            text_color=self.c("success") if ok2 else self.c("error")
+        )
+        session_log._history.clear()
+        self.after(300, lambda: self.app.show_frame("TabbedContainer"))
 
 
 MODE_SPECS = [
@@ -1696,6 +2003,20 @@ class StatusPage(AppPage):
 
                 self._items[key] = (dot, value)
 
+            # Add export button inside the images card
+            if section_key == "s_images":
+                export_row = ctk.CTkFrame(card, fg_color="transparent", height=32)
+                export_row.pack(fill="x", padx=10, pady=3)
+                export_row.pack_propagate(False)
+                self._export_btn = ctk.CTkButton(export_row, text=self.t("export_images"),
+                                                 fg_color=c["primary"], hover_color=c["primary_hover"],
+                                                 text_color="white",
+                                                 font=ctk.CTkFont(family=f, size=12),
+                                                 corner_radius=6, height=26,
+                                                 command=self._export_images)
+                self._export_btn.pack(side="left")
+                self._reg(self._export_btn, "export_images")
+
         path_header = ctk.CTkLabel(scroll, text=self.t("s_paths"),
                                    font=ctk.CTkFont(family=f, size=13, weight="bold"),
                                    text_color=c["text_secondary"])
@@ -1784,6 +2105,24 @@ class StatusPage(AppPage):
                 if key in path_map:
                     lbl.configure(text=path_map[key])
         self.after(0, update)
+
+    def _export_images(self):
+        from tkinter import filedialog
+        image_dir = filedialog.askdirectory(title=self.t("select_image_dir_title"))
+        if not image_dir:
+            return
+        self._export_btn.configure(state="disabled", text="...")
+        threading.Thread(target=lambda: self._do_export(image_dir), daemon=True).start()
+
+    def _do_export(self, output_dir):
+        ok = export_images(output_dir, log_callback=None)
+        self.after(0, lambda: self._export_btn.configure(
+            state="normal", text=self.t("export_done") if ok else self.t("export_failed")
+        ))
+        if ok:
+            self.after(3000, lambda: self._export_btn.configure(
+                state="normal", text=self.t("export_images")
+            ))
 
     def refresh_language(self):
         super().refresh_language()

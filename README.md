@@ -29,6 +29,7 @@
 - **环境自检**（启动时自动检测 Docker、镜像、服务状态）
 - **内置配置编辑**（GUI 内直接编辑保存配置文件）
 - **下载进度实时显示**（日志持久化保存）
+- **Docker 镜像导入/导出**（支持本地 .tar 镜像文件，免构建快速部署）
 - **单文件打包**（PyInstaller 打包为独立 EXE）
 
 ## 环境要求
@@ -59,6 +60,12 @@ pip install -r requirements.txt
 ```bash
 python apple_music_downloader.py
 ```
+
+使用本地镜像导入（跳过源码构建）：
+```bash
+python apple_music_downloader.py --image-dir ./docker-images
+```
+`--image-dir` 指定包含 `.tar` 镜像文件的目录，启动时自动执行 `docker load` 加载。
 
 **GUI 版本**：
 ```bash
@@ -96,6 +103,22 @@ build.bat
 | wrapper | `assets/Wrapper/` | 本地构建，Dockerfile + wrapper 二进制已打包进 exe |
 | downloader | `assets/apple-music-downloader/` | 本地构建，Go 源码 + Dockerfile 已打包进 exe |
 
+### 本地镜像导入
+
+如果已有导出的 `.tar` 镜像文件，可跳过构建直接加载：
+
+**CLI**：启动时通过 `--image-dir` 参数指定镜像目录
+
+**GUI**：启动时弹窗询问"是否使用本地镜像"，选择"是"后选取目录即可
+
+系统会自动加载目录下所有 `.tar` 文件，并根据关键词（`wrapper`、`apple-music-downloader`）自动匹配标签。如果标签不匹配，会执行 `docker tag` 修正。
+
+### 镜像导出
+
+**CLI**：主菜单按 `E`，选择输出目录，导出 `wrapper_local.tar` 和 `apple-music-downloader_local.tar`
+
+**GUI**：状态页 → 镜像卡片 → 点击「导出镜像」按钮
+
 ## GUI 使用说明
 
 界面采用侧边栏页签导航，包含三个页签：
@@ -117,7 +140,7 @@ build.bat
 | 显示项 | 说明 |
 |--------|------|
 | Docker | 安装状态、守护进程运行状态 |
-| 镜像 | Wrapper 镜像、下载器镜像是否已构建 |
+| 镜像 | Wrapper 镜像、下载器镜像是否已构建，支持导出 .tar |
 | Wrapper 容器 | 运行状态、端口映射 |
 | 登录 | 凭据缓存状态 |
 | 路径 | 配置文件、日志目录、Wrapper 数据目录路径，可点击打开 |
@@ -144,6 +167,7 @@ build.bat
 | `8` | 搜索（歌曲/专辑/艺人） |
 | `9` | 下载艺人全部专辑 |
 | `0` | 自定义命令 |
+| `E` | 导出 Docker 镜像（保存为 .tar） |
 | `H` | 帮助信息 |
 | `Q` | 退出 |
 
@@ -228,3 +252,6 @@ build.bat
 **Q: 打包 EXE 失败？**
 - 确保已关闭正在运行的 `AppleMusicDownloader.exe`
 - 确保 `requirements.txt` 中的依赖已安装：`pip install -r requirements.txt`
+
+**Q: 如何在多台电脑间迁移，避免重复构建镜像？**
+使用镜像导入/导出功能：在已构建完成的电脑上按 `E` 导出 .tar 文件，拷贝到新电脑后用 `--image-dir`（CLI）或启动弹窗（GUI）加载即可，无需重新构建。

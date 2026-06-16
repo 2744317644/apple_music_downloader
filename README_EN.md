@@ -29,6 +29,7 @@ Thanks to the authors and contributors of the above projects.
 - **Environment self-check** — automatic detection of Docker, images, and service status
 - **Built-in config editor** — edit and save configuration directly in the GUI
 - **Real-time download progress** with persistent logging
+- **Docker image import/export** — use local .tar images for fast deployment without rebuilding
 - **Standalone EXE** — single-file packaging via PyInstaller
 
 ## Requirements
@@ -59,6 +60,12 @@ Edit the key settings in that file as needed:
 ```bash
 python apple_music_downloader.py
 ```
+
+Import local images (skip source build):
+```bash
+python apple_music_downloader.py --image-dir ./docker-images
+```
+`--image-dir` specifies a directory containing `.tar` image files. They are loaded via `docker load` on startup.
 
 **GUI version**:
 ```bash
@@ -96,6 +103,22 @@ Generates `AppleMusicDownloader.exe`.
 | wrapper | `assets/Wrapper/` | Built locally, Dockerfile + wrapper binary bundled in EXE |
 | downloader | `assets/apple-music-downloader/` | Built locally, Go source + Dockerfile bundled in EXE |
 
+### Local Image Import
+
+If you already have exported `.tar` image files, you can skip the build and load directly:
+
+**CLI**: Pass `--image-dir` at startup to specify the image directory
+
+**GUI**: A dialog will ask "Use local images?" on startup — choose "Yes" and select the directory
+
+The system loads all `.tar` files in the directory and auto-matches tags using keywords (`wrapper`, `apple-music-downloader`). If tags don't match, `docker tag` is applied automatically.
+
+### Image Export
+
+**CLI**: Press `E` in the main menu, select an output directory. Generates `wrapper_local.tar` and `apple-music-downloader_local.tar`
+
+**GUI**: Status page → Images card → click "Export Images" button
+
 ## GUI Usage
 
 The interface uses sidebar tab navigation with three tabs:
@@ -117,7 +140,7 @@ The interface uses sidebar tab navigation with three tabs:
 | Item | Description |
 |------|-------------|
 | Docker | Installation status, daemon running status |
-| Images | Whether Wrapper and Downloader images are built |
+| Images | Whether Wrapper and Downloader images are built; supports export as .tar |
 | Wrapper Container | Running status, port mapping |
 | Login | Credential cache status |
 | Paths | Config file, log directory, and wrapper data paths (clickable to open) |
@@ -144,6 +167,7 @@ Language switch buttons are available at the bottom of the sidebar and in the to
 | `8` | Search (song/album/artist) |
 | `9` | Download All Artist Albums |
 | `0` | Custom Command |
+| `E` | Export Docker Images (save as .tar) |
 | `H` | Help / Info |
 | `Q` | Quit |
 
@@ -228,3 +252,6 @@ Ensure `storefront` matches your Apple Music account region (e.g., `us` for Unit
 **Q: EXE build failed?**
 - Close any running `AppleMusicDownloader.exe`
 - Ensure dependencies are installed: `pip install -r requirements.txt`
+
+**Q: How to migrate between machines without rebuilding images?**
+Use the import/export feature: export .tar files on the built machine (press `E` in CLI), copy them to the new machine, then load via `--image-dir` (CLI) or the startup dialog (GUI). No rebuild needed.

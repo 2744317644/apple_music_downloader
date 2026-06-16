@@ -3,6 +3,7 @@
 Requires: Python 3.7+, Docker
 """
 
+import argparse
 import os
 import re
 import sys
@@ -101,6 +102,102 @@ def _run(*args, capture=True, silent=False, check=False):
 def _live(*args):
     """Run with stdout/stderr streaming (for interactive -it)."""
     return subprocess.run(list(args), check=False).returncode
+
+
+def load_docker_image(tar_path):
+    """Load a Docker image from a local .tar file."""
+    if not os.path.isfile(tar_path):
+        print(f"{E}[ERROR] File not found: {tar_path}{R}")
+        return False
+    print(f"{C}[INFO] Loading image from: {tar_path}{R}")
+    try:
+        result = subprocess.run(
+            ["docker", "load", "-i", tar_path],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            print(f"{G}[OK] {result.stdout.strip()}{R}")
+            return True
+        else:
+            err = result.stderr.strip() or result.stdout.strip()
+            print(f"{E}[ERROR] docker load failed: {err[:500]}{R}")
+            return False
+    except Exception as e:
+        print(f"{E}[ERROR] {e}{R}")
+        return False
+
+
+def load_images_from_dir(image_dir):
+    """Load all .tar files from a directory as Docker images."""
+    if not os.path.isdir(image_dir):
+        print(f"{E}[ERROR] Directory not found: {image_dir}{R}")
+        return
+    tar_files = sorted([f for f in os.listdir(image_dir) if f.endswith('.tar')])
+    if not tar_files:
+        print(f"{Y}[WARN] No .tar files found in: {image_dir}{R}")
+        return
+    print(f"{C}[INFO] Found {len(tar_files)} .tar file(s) in: {image_dir}{R}")
+    for tf in tar_files:
+        load_docker_image(os.path.join(image_dir, tf))
+    _auto_tag_images()
+
+
+def _get_all_image_repos():
+    """Return set of 'repo:tag' for all Docker images."""
+    try:
+        out = subprocess.run(
+            ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"],
+            capture_output=True, text=True
+        )
+        return set(line.strip() for line in out.stdout.strip().split('\n') if line.strip())
+    except Exception:
+        return set()
+
+
+def _auto_tag_images():
+    """After docker load, auto-tag loaded images to expected names if needed."""
+    tag_map = [
+        (WRAPPER_IMAGE, ["wrapper"]),
+        (DL_IMAGE, ["apple-music-downloader", "am-downloader", "downloader"]),
+    ]
+    for target, hints in tag_map:
+        if _run("docker", "images", "-q", target, silent=True):
+            continue
+        for repo_tag in _get_all_image_repos():
+            if repo_tag == target:
+                continue
+            if any(h in repo_tag.lower() for h in hints):
+                print(f"{C}[INFO] Auto-tagging {repo_tag} -> {target}{R}")
+                _live("docker", "tag", repo_tag, target)
+                break
+
+
+def export_images(output_dir=None):
+    """Export Docker images as .tar files."""
+    if output_dir is None:
+        output_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+    os.makedirs(output_dir, exist_ok=True)
+    wrapper_tar = os.path.join(output_dir, "wrapper_local.tar")
+    dl_tar = os.path.join(output_dir, "apple-music-downloader_local.tar")
+    all_ok = True
+    for image, tar_path, label in [
+        (WRAPPER_IMAGE, wrapper_tar, "Wrapper"),
+        (DL_IMAGE, dl_tar, "Downloader"),
+    ]:
+        if not _run("docker", "images", "-q", image, silent=True):
+            print(f"{Y}[WARN] Image '{image}' not found, skipping.{R}")
+            all_ok = False
+            continue
+        print(f"{C}[INFO] Exporting {label}: {image} -> {tar_path}{R}")
+        code = _live("docker", "save", "-o", tar_path, image)
+        if code == 0:
+            print(f"{G}[OK] Exported: {tar_path}{R}")
+        else:
+            print(f"{E}[ERROR] Failed to export {image}{R}")
+            all_ok = False
+    if all_ok:
+        print(f"{G}[OK] All images exported to: {output_dir}{R}")
+    return all_ok
 
 
 # =====================================================================
@@ -315,7 +412,7 @@ def build_downloader_image():
     return True
 
 
-def check_prerequisites():
+def check_prerequisites(image_dir=None):
     if subprocess.call(["docker", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) != 0:
         print(f"{E}[ERROR] Docker is not installed or not in PATH.{R}")
         sys.exit(1)
@@ -324,6 +421,10 @@ def check_prerequisites():
     config_path = get_config_path()
     if not config_path:
         print(f"{Y}[WARN] 未找到配置文件示例 (config.yaml.example)，请手动创建 {CONFIG_FILE}{R}")
+
+    if image_dir:
+        print(f"{C}[INFO] 尝试从本地目录加载镜像: {image_dir}{R}")
+        load_images_from_dir(image_dir)
 
     if not _run("docker", "images", "-q", DL_IMAGE, silent=True):
         if not build_downloader_image():
@@ -503,6 +604,20 @@ def menu_help():
     input("Press Enter to return")
 
 
+def menu_export_images():
+    banner()
+    print(f"{C}EXPORT DOCKER IMAGES{R}")
+    print(f"  This will save {WRAPPER_IMAGE} and {DL_IMAGE} as .tar files.")
+    print()
+    out = input(f"Output directory [{os.path.join(os.path.expanduser('~'), 'Downloads')}]: ").strip()
+    if not out:
+        out = None
+    print()
+    export_images(out)
+    print()
+    input("Press Enter to return")
+
+
 MENU = {
     "1": ("Download Album", menu_download_album),
     "2": ("Download Single Song", menu_download_song),
@@ -516,6 +631,7 @@ MENU = {
     "0": ("Custom Command", menu_custom),
     "s": ("Wrapper Status", menu_wrapper_status),
     "h": ("Help / Info", menu_help),
+    "e": ("Export Images", menu_export_images),
 }
 
 
@@ -531,11 +647,12 @@ def main_menu():
     banner()
     status_line()
     for k, (label, _) in MENU.items():
-        if k in ("s", "h"):
+        if k in ("s", "h", "e"):
             continue
         print(f"  [{k}] {label}")
     print()
     print(f"  {D}[S] Wrapper Status")
+    print(f"  [E] Export Images")
     print(f"  [H] Help / Info")
     print(f"  [Q] Quit{R}")
     print()
@@ -543,7 +660,12 @@ def main_menu():
 
 
 def main():
-    check_prerequisites()
+    parser = argparse.ArgumentParser(description="Apple Music ALAC Downloader")
+    parser.add_argument("--image-dir", dest="image_dir", metavar="DIR",
+                        help="Directory containing local Docker image .tar files")
+    args = parser.parse_args()
+
+    check_prerequisites(image_dir=args.image_dir)
     while True:
         c = main_menu()
         if c == "q":
