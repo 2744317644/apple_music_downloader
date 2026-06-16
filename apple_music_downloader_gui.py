@@ -473,23 +473,38 @@ def wrapper_login(username, password, log_callback=None):
     if code != 0:
         return False, "Failed to start login container"
     if log_callback:
-        log_callback("Waiting for login to complete...")
+        log_callback("Waiting for credential database...")
     waited = 0
+    last_lines = 0
     while not os.path.isfile(db_file) and waited < 120:
         time.sleep(2)
         waited += 2
+        if log_callback:
+            out = _run("docker", "logs", f"{WRAPPER_NAME}-login", silent=True)
+            if out:
+                lines = out.split('\n')
+                if len(lines) > last_lines:
+                    for line in lines[last_lines:]:
+                        s = line.strip()
+                        if s:
+                            log_callback(s)
+                    last_lines = len(lines)
     if not os.path.isfile(db_file):
         exit_code = _run("docker", "inspect", "-f", "{{.State.ExitCode}}", f"{WRAPPER_NAME}-login", silent=True)
         logs = _run("docker", "logs", f"{WRAPPER_NAME}-login")
         if log_callback:
             log_callback(f"[ERROR] Login failed (exit={exit_code})")
-            for line in logs.split('\n'):
-                if line.strip():
-                    log_callback(line.strip())
+            if logs:
+                lines = logs.split('\n')
+                unseen = lines[last_lines:] if len(lines) > last_lines else lines
+                for line in unseen:
+                    s = line.strip()
+                    if s:
+                        log_callback(s)
         _run("docker", "rm", "-f", f"{WRAPPER_NAME}-login", silent=True)
         return False, f"Login failed (exit={exit_code}). {logs}"
     if log_callback:
-        log_callback("[OK] Login credential database created")
+        log_callback("[OK] Credential database created")
     fsi_file = os.path.join(
         os.path.abspath(WRAPPER_DATA_DIR),
         "data", "com.apple.android.music", "files", "fsi.pdat"
@@ -497,9 +512,20 @@ def wrapper_login(username, password, log_callback=None):
     if log_callback:
         log_callback("Waiting for FairPlay registration...")
     waited = 0
+    last_lines = 0
     while not os.path.isfile(fsi_file) and waited < 120:
         time.sleep(2)
         waited += 2
+        if log_callback:
+            out = _run("docker", "logs", f"{WRAPPER_NAME}-login", silent=True)
+            if out:
+                lines = out.split('\n')
+                if len(lines) > last_lines:
+                    for line in lines[last_lines:]:
+                        s = line.strip()
+                        if s:
+                            log_callback(s)
+                    last_lines = len(lines)
     _run("docker", "rm", "-f", f"{WRAPPER_NAME}-login", silent=True)
     if os.path.isfile(fsi_file):
         if log_callback:
@@ -521,6 +547,8 @@ def do_start_wrapper(log_callback=None):
     if not os.path.isfile(db_file):
         return False, "NEED_LOGIN"
     _run("docker", "rm", "-f", WRAPPER_NAME, silent=True)
+    if log_callback:
+        log_callback("Launching wrapper container...")
     code = _live(
         "docker", "run", "-dit",
         "--name", WRAPPER_NAME,
@@ -535,11 +563,41 @@ def do_start_wrapper(log_callback=None):
     )
     if code != 0:
         return False, "Failed to start wrapper"
-    time.sleep(15)
+    if log_callback:
+        log_callback("Waiting for wrapper to initialize...")
+    last_lines = 0
+    for _ in range(8):
+        time.sleep(2)
+        if wrapper_running():
+            # stream any remaining logs
+            if log_callback:
+                out = _run("docker", "logs", WRAPPER_NAME, silent=True)
+                if out:
+                    lines = out.split('\n')
+                    if len(lines) > last_lines:
+                        for line in lines[last_lines:]:
+                            s = line.strip()
+                            if s:
+                                log_callback(s)
+        if log_callback:
+            out = _run("docker", "logs", WRAPPER_NAME, silent=True)
+            if out:
+                lines = out.split('\n')
+                if len(lines) > last_lines:
+                    for line in lines[last_lines:]:
+                        s = line.strip()
+                        if s:
+                            log_callback(s)
+                    last_lines = len(lines)
     if wrapper_running():
         return True, f"Wrapper running (ports: {DECRYPT_PORT}/{M3U8_PORT}/{ACCOUNT_PORT})"
     else:
         logs = _run("docker", "logs", WRAPPER_NAME)
+        if log_callback and logs:
+            for line in logs.split('\n'):
+                s = line.strip()
+                if s:
+                    log_callback(s)
         if os.path.isfile(db_file):
             os.remove(db_file)
         return False, f"NEED_LOGIN\n{logs}"
