@@ -1172,6 +1172,7 @@ class LoginPage(AppPage):
             text="Wrapper running" if ok2 else "Wrapper start failed",
             text_color=self.c("success") if ok2 else self.c("error")
         )
+        session_log._history.clear()
         self.after(300, lambda: self.app.show_frame("TabbedContainer"))
 
 
