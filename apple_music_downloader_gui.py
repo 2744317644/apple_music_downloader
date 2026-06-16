@@ -882,22 +882,37 @@ class SetupPage(AppPage):
         need_wrapper = not _run("docker", "images", "-q", WRAPPER_IMAGE, silent=True)
         need_downloader = not _run("docker", "images", "-q", DL_IMAGE, silent=True)
 
-        if need_wrapper or need_downloader:
-            from tkinter import messagebox
-            answer = messagebox.askyesno(
-                self.t("use_local_image_title"),
-                self.t("use_local_image_msg")
-            )
-            if answer:
-                from tkinter import filedialog
-                image_dir = filedialog.askdirectory(
-                    title=self.t("select_image_dir_title")
-                )
-                if image_dir:
-                    self.log(f"Loading images from: {image_dir}")
-                    load_images_from_dir(image_dir, self.log)
+        if not (need_wrapper or need_downloader):
+            threading.Thread(target=self._run_setup, daemon=True).start()
+            return
 
+        # Delay dialog so SetupPage renders first
+        self.after(200, self._prompt_local_image)
+
+    def _prompt_local_image(self):
+        from tkinter import messagebox
+        answer = messagebox.askyesno(
+            self.t("use_local_image_title"),
+            self.t("use_local_image_msg")
+        )
+        if answer:
+            from tkinter import filedialog
+            image_dir = filedialog.askdirectory(
+                title=self.t("select_image_dir_title")
+            )
+            if image_dir:
+                self.log(f"Loading images from: {image_dir}")
+                self.set_status("Loading local Docker images...")
+                threading.Thread(target=self._load_images_and_setup, args=(image_dir,), daemon=True).start()
+                return
+
+        # User said no or cancelled - proceed with normal setup
         threading.Thread(target=self._run_setup, daemon=True).start()
+
+    def _load_images_and_setup(self, image_dir):
+        load_images_from_dir(image_dir, self.log)
+        self.after(0, lambda: self.set_status("Image loading done, starting checks..."))
+        self._run_setup()
 
     def _run_setup(self):
         steps = [
