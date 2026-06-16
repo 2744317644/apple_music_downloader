@@ -702,8 +702,6 @@ class AppleMusicApp(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         os.makedirs(APP_DATA_DIR, exist_ok=True)
         get_config_path()
-        self.bind('<Map>', lambda e: self.update())
-        self.update()
 
     def t(self, key, **fmt):
         value = I18N.get(self.lang, {}).get(key, key)
