@@ -13,8 +13,6 @@ import atexit
 import tempfile
 import threading
 import subprocess
-import ctypes
-from ctypes import wintypes
 from datetime import datetime
 import customtkinter as ctk
 from PIL import Image, ImageDraw
@@ -674,7 +672,6 @@ class AppleMusicApp(ctk.CTk):
         self.title("Apple Music Downloader")
         self.geometry("880x660")
         self.minsize(640, 480)
-        self._fix_class_brush()
 
         if getattr(sys, 'frozen', False):
             try:
@@ -692,7 +689,7 @@ class AppleMusicApp(ctk.CTk):
         self.wrapper_ready = False
         self.setup_done = False
 
-        self.container = ctk.CTkFrame(self, fg_color="transparent")
+        self.container = ctk.CTkFrame(self, fg_color=self.colors["background"])
         self.container.pack(fill="both", expand=True)
 
         self.frames = {}
@@ -705,6 +702,8 @@ class AppleMusicApp(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         os.makedirs(APP_DATA_DIR, exist_ok=True)
         get_config_path()
+        self.bind('<Map>', lambda e: self.update())
+        self.update()
 
     def t(self, key, **fmt):
         value = I18N.get(self.lang, {}).get(key, key)
@@ -726,24 +725,6 @@ class AppleMusicApp(ctk.CTk):
         session_log.close()
         self.destroy()
 
-    def _fix_class_brush(self):
-        """Rebind WNDCLASS.hbrBackground to our color to stop WM_ERASEBKGND flash."""
-        if os.name != 'nt':
-            return
-        try:
-            hwnd_val = self.winfo_id()
-            if not hwnd_val:
-                return
-            hwnd = wintypes.HWND(hwnd_val)
-            bg = self.colors["background"]
-            r, g, b = int(bg[1:3], 16), int(bg[3:5], 16), int(bg[5:7], 16)
-            colorref = r | (g << 8) | (b << 16)
-            brush = ctypes.windll.gdi32.CreateSolidBrush(colorref)
-            self._bg_brush = brush
-            ctypes.windll.user32.SetClassLongPtrW(hwnd, -10, brush)
-        except Exception:
-            self._bg_brush = None
-
     def show_frame(self, name):
         frame = self.frames[name]
         frame.tkraise()
@@ -754,7 +735,7 @@ class AppleMusicApp(ctk.CTk):
 
 class AppPage(ctk.CTkFrame):
     def __init__(self, parent, app):
-        super().__init__(parent, fg_color="transparent")
+        super().__init__(parent, fg_color=self.app.colors["background"])
         self.app = app
         self._i18n_refs = []
 
