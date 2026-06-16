@@ -669,11 +669,7 @@ class AppleMusicApp(ctk.CTk):
         super().__init__()
         self.colors = APPLE_LIGHT
         self.configure(fg_color=self.colors["background"])
-        try:
-            import tkinter as tk
-            tk.Tk.configure(self, bg=self.colors["background"])
-        except Exception:
-            pass
+        self.attributes('-alpha', 0.99)
         self.title("Apple Music Downloader")
         self.geometry("880x660")
         self.minsize(640, 480)
