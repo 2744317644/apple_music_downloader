@@ -608,8 +608,8 @@ class AppleMusicApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Apple Music Downloader")
-        self.geometry("800x700")
-        self.minsize(600, 550)
+        self.geometry("880x660")
+        self.minsize(640, 480)
 
         if getattr(sys, 'frozen', False):
             try:
