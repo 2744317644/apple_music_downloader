@@ -733,23 +733,29 @@ class AppleMusicApp(ctk.CTk):
         """Hook WM_ERASEBKGND to prevent Windows from flashing black on restore."""
         if os.name != 'nt':
             return
-        hwnd = wintypes.HWND(self.winfo_id())
-        _WndProcType = WINFUNCTYPE(ctypes.c_longlong, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
-        self._orig_wndproc = None
-        app = self
+        try:
+            hwnd_val = self.winfo_id()
+            if not hwnd_val:
+                return
+            hwnd = wintypes.HWND(hwnd_val)
+            _WndProcType = WINFUNCTYPE(ctypes.c_longlong, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+            self._orig_wndproc = None
+            app = self
 
-        @_WndProcType
-        def wnd_proc(hwnd, msg, wparam, lparam):
-            if msg == AppleMusicApp._WM_ERASEBKGND:
-                return 1
-            return ctypes.windll.user32.CallWindowProcW(app._orig_wndproc, hwnd, msg, wparam, lparam)
+            @_WndProcType
+            def wnd_proc(hwnd, msg, wparam, lparam):
+                if msg == AppleMusicApp._WM_ERASEBKGND:
+                    return 1
+                return ctypes.windll.user32.CallWindowProcW(app._orig_wndproc, hwnd, msg, wparam, lparam)
 
-        self._wndproc = wnd_proc
-        user32 = ctypes.windll.user32
-        self._orig_wndproc = user32.SetWindowLongPtrW(
-            hwnd, AppleMusicApp._GWLP_WNDPROC,
-            ctypes.cast(wnd_proc, ctypes.c_void_p).value
-        )
+            self._wndproc = wnd_proc
+            user32 = ctypes.windll.user32
+            self._orig_wndproc = user32.SetWindowLongPtrW(
+                hwnd, AppleMusicApp._GWLP_WNDPROC,
+                ctypes.cast(wnd_proc, ctypes.c_void_p).value
+            )
+        except Exception:
+            pass
 
     def show_frame(self, name):
         frame = self.frames[name]
