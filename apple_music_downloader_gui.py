@@ -927,6 +927,8 @@ class LoginPage(AppPage):
     def __init__(self, parent, app):
         super().__init__(parent, app)
         self.log_text = None
+        self._log_queue = queue.Queue()
+        self._flush_timer = None
         self.build_ui()
 
     def build_ui(self):
@@ -1018,14 +1020,22 @@ class LoginPage(AppPage):
 
     def log(self, msg):
         session_log.write(msg)
-        self.after(0, lambda m=msg: self._log_ui(m))
+        self._log_queue.put(msg)
 
-    def _log_ui(self, msg):
-        if self.log_text and self.log_text.winfo_exists():
+    def _flush_log(self):
+        messages = []
+        while not self._log_queue.empty():
+            try:
+                messages.append(self._log_queue.get_nowait())
+            except queue.Empty:
+                break
+        if messages and self.log_text and self.log_text.winfo_exists():
             self.log_text.configure(state="normal")
-            self.log_text.insert("end", msg + "\n")
+            for m in messages:
+                self.log_text.insert("end", m + "\n")
             self.log_text.see("end")
             self.log_text.configure(state="normal")
+        self._flush_timer = self.after(100, self._flush_log)
 
     def on_show(self):
         self.status_label.configure(text="")
@@ -1035,6 +1045,9 @@ class LoginPage(AppPage):
             self.log_text.configure(state="normal")
             self.log_text.delete("1.0", "end")
             self.log_text.configure(state="normal")
+        if self._flush_timer:
+            self.after_cancel(self._flush_timer)
+        self._flush_timer = self.after(100, self._flush_log)
 
     def _toggle_lang(self):
         new_lang = "en" if self.app.lang == "zh" else "zh"
@@ -1064,12 +1077,22 @@ class LoginPage(AppPage):
         self.progress.set(1.0)
         if ok:
             self.status_label.configure(text="Login successful", text_color=self.c("success"))
-            ok2, _ = do_start_wrapper()
-            self.app.wrapper_ready = ok2
-            self.after(1000, lambda: self.app.show_frame("TabbedContainer"))
+            self.log("[OK] Login done, starting wrapper in background...")
+            threading.Thread(target=self._post_login_start_wrapper, daemon=True).start()
         else:
             self.status_label.configure(text=msg, text_color=self.c("error"))
             self.login_btn.configure(state="normal")
+
+    def _post_login_start_wrapper(self):
+        ok2, msg2 = do_start_wrapper(log_callback=self.log)
+        self.after(0, lambda: self._post_login_done(ok2))
+
+    def _post_login_done(self, ok2):
+        self.app.wrapper_ready = ok2
+        if self._flush_timer:
+            self.after_cancel(self._flush_timer)
+            self._flush_timer = None
+        self.after(1000, lambda: self.app.show_frame("TabbedContainer"))
 
 
 MODE_SPECS = [
