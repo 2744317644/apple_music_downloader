@@ -864,8 +864,30 @@ class SetupPage(AppPage):
 
     def _start_docker(self):
         self.start_docker_btn.pack_forget()
-        self.log("Starting Docker Desktop...")
-        self.set_status("Waiting for Docker to start...")
+        self._try_launch_docker()
+        threading.Thread(target=self._wait_docker_and_continue, daemon=True).start()
+
+    def start_setup(self):
+        self.log_text.delete("1.0", "end")
+        self.set_progress(0)
+        self.retry_btn.pack_forget()
+        self.start_docker_btn.pack_forget()
+
+        # Check Docker daemon, auto-start if needed
+        if subprocess.call(["docker", "info"],
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL,
+                           startupinfo=_SI, creationflags=_CF) != 0:
+            self.log("Docker daemon not running, attempting to start...")
+            self.set_status("Starting Docker Desktop...")
+            self._try_launch_docker()
+            threading.Thread(target=self._wait_docker_and_continue, daemon=True).start()
+            return
+
+        self.log("Docker OK")
+        self._continue_setup()
+
+    def _try_launch_docker(self):
         docker_exe = os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"),
                                   "Docker", "Docker", "Docker Desktop.exe")
         if not os.path.isfile(docker_exe):
@@ -874,40 +896,23 @@ class SetupPage(AppPage):
         if os.path.isfile(docker_exe):
             subprocess.Popen([docker_exe], startupinfo=_SI, creationflags=_CF)
         else:
-            self.log("Docker Desktop not found. Please start Docker manually.")
-        threading.Thread(target=self._wait_docker, daemon=True).start()
+            self.log("Docker Desktop not found at known paths")
 
-    def _wait_docker(self):
-        for _ in range(60):
+    def _wait_docker_and_continue(self):
+        for i in range(60):
             time.sleep(2)
             if subprocess.call(["docker", "info"],
                                stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL,
                                startupinfo=_SI, creationflags=_CF) == 0:
-                self.log("Docker is ready")
-                self.after(0, self.start_setup)
+                self.after(0, lambda: self.log("Docker is ready"))
+                self.after(0, self._continue_setup)
                 return
-        self.log("Docker did not start in time")
+        self.after(0, lambda: self.log("Docker did not start in time"))
+        self.after(0, lambda: self.set_status("Docker failed to start"))
         self.after(0, lambda: self.start_docker_btn.pack(pady=8))
 
-    def start_setup(self):
-        self.log_text.delete("1.0", "end")
-        self.set_progress(0)
-        self.retry_btn.pack_forget()
-        self.start_docker_btn.pack_forget()
-
-        # Check Docker daemon first
-        if subprocess.call(["docker", "info"],
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL,
-                           startupinfo=_SI, creationflags=_CF) != 0:
-            self.log("Docker daemon not running")
-            self.set_status("Please start Docker Desktop first")
-            self.start_docker_btn.pack(pady=8)
-            return
-
-        self.log("Docker OK")
-
+    def _continue_setup(self):
         need_wrapper = not _run("docker", "images", "-q", WRAPPER_IMAGE, silent=True)
         need_downloader = not _run("docker", "images", "-q", DL_IMAGE, silent=True)
 
@@ -944,7 +949,6 @@ class SetupPage(AppPage):
 
     def _run_setup(self):
         steps = [
-            ("Docker", self._check_docker),
             ("Build Wrapper Image", self._check_wrapper),
             ("Build Downloader Image", self._check_downloader),
             ("Start Wrapper", self._start_wrapper),
