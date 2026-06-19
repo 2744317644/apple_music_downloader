@@ -2366,6 +2366,10 @@ class ConvertPage(AppPage):
             name = os.path.basename(src)
             ext = os.path.splitext(src)[1].lower()
 
+            # Skip if target same as source (e.g. .flac -> .flac)
+            if ext == "." + fmt:
+                continue
+
             self.after(0, lambda n=name: self.log(self.t("convert_converting", file=n)))
             self.after(0, lambda v=(i+1)/total: self._progress.set(v))
 
