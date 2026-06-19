@@ -2162,7 +2162,7 @@ class StatusPage(AppPage):
 class ConvertPage(AppPage):
     def __init__(self, parent, app):
         super().__init__(parent, app)
-        self._source_dir = DOWNLOAD_DIR
+        self._source_dir = os.path.join(os.path.expanduser("~"), "Downloads", "AM-DL downloads")
         self._converting = False
         self._format_var = None
         self._popup = None
@@ -2335,15 +2335,14 @@ class ConvertPage(AppPage):
         flac = FLAC_EXE
         self.after(0, lambda: self.log(self.t("convert_scanning")))
 
-        # Scan for m4a and flac files
+        # Recursive scan for m4a and flac files
         files = []
         try:
-            for f in sorted(os.listdir(self._source_dir)):
-                full = os.path.join(self._source_dir, f)
-                if os.path.isfile(full):
+            for root, dirs, filenames in os.walk(self._source_dir):
+                for f in sorted(filenames):
                     ext = os.path.splitext(f)[1].lower()
                     if ext in ('.m4a', '.flac'):
-                        files.append(full)
+                        files.append(os.path.join(root, f))
         except Exception as e:
             self.after(0, lambda: self.log(f"[ERROR] {e}"))
             self.after(0, self._reset_btn)
