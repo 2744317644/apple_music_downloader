@@ -2183,6 +2183,9 @@ class ConvertPage(AppPage):
         self._source_dir = DOWNLOAD_DIR
         self._converting = False
         self._format_var = None
+        self._popup = None
+        self._popup_dismiss_id = None
+        self._reposition_timer = None
         self.build_ui()
 
     def build_ui(self):
@@ -2213,14 +2216,15 @@ class ConvertPage(AppPage):
         self._reg(self._select_dir_btn, "convert_select_dir")
 
         self._format_var = ctk.StringVar(value="FLAC")
-        self._format_menu = ctk.CTkOptionMenu(btn_frame, values=["FLAC", "WAV"],
-                                               variable=self._format_var,
-                                               width=70, height=30, corner_radius=6,
-                                               fg_color=c["input_bg"], text_color=c["text"],
-                                               button_color=c["primary"],
-                                               button_hover_color=c["primary_hover"],
-                                               font=ctk.CTkFont(family=f, size=12))
-        self._format_menu.pack(side="left", padx=(0, 6))
+        self._format_entry = ctk.CTkEntry(btn_frame, height=30, corner_radius=6,
+                                           fg_color=c["input_bg"], text_color=c["text"],
+                                           border_color=c["border"],
+                                           font=ctk.CTkFont(family=f, size=12),
+                                           width=70)
+        self._format_entry.pack(side="left", padx=(0, 6))
+        self._format_entry.insert(0, "FLAC")
+        self._format_entry.configure(state="readonly")
+        self._format_entry.bind("<Button-1>", lambda e: self._show_format_popup())
 
         self._convert_btn = ctk.CTkButton(btn_frame, text=self.t("convert_btn"),
                                            width=90, height=30, corner_radius=6,
@@ -2273,6 +2277,96 @@ class ConvertPage(AppPage):
         if d:
             self._source_dir = d
             self._update_dir_label()
+
+    def _show_format_popup(self):
+        if self._popup and self._popup.winfo_exists():
+            self._popup.destroy()
+            self._popup = None
+        if self._popup_dismiss_id is not None:
+            try:
+                self.winfo_toplevel().unbind("<Button-1>", self._popup_dismiss_id)
+            except Exception:
+                pass
+            self._popup_dismiss_id = None
+        if self._reposition_timer is not None:
+            self.after_cancel(self._reposition_timer)
+            self._reposition_timer = None
+
+        c = self.app.colors
+        f = FONT_FAMILY
+        popup = ctk.CTkToplevel(self)
+        popup.overrideredirect(True)
+        popup.transient(self.winfo_toplevel())
+        popup.configure(fg_color=c["surface"])
+        popup.configure(border_color=c["border"], border_width=1)
+        self._popup = popup
+
+        frame = ctk.CTkFrame(popup, fg_color="transparent")
+        frame.pack(fill="both", expand=True, padx=6, pady=6)
+
+        def select(fmt):
+            self._format_var.set(fmt)
+            self._format_entry.configure(state="normal")
+            self._format_entry.delete(0, "end")
+            self._format_entry.insert(0, fmt)
+            self._format_entry.configure(state="readonly")
+            dismiss()
+
+        def dismiss(*args):
+            if self._reposition_timer is not None:
+                self.after_cancel(self._reposition_timer)
+                self._reposition_timer = None
+            if self._popup_dismiss_id is not None:
+                try:
+                    self.winfo_toplevel().unbind("<Button-1>", self._popup_dismiss_id)
+                except Exception:
+                    pass
+                self._popup_dismiss_id = None
+            if self._popup:
+                try:
+                    self._popup.destroy()
+                except Exception:
+                    pass
+                self._popup = None
+
+        for fmt in ["FLAC", "WAV"]:
+            btn = ctk.CTkButton(frame, text=fmt, anchor="w",
+                                fg_color="transparent", hover_color=c["input_bg"],
+                                text_color=c["text"],
+                                font=ctk.CTkFont(family=f, size=13),
+                                corner_radius=6, height=32, width=190,
+                                command=lambda f=fmt: select(f))
+            btn.pack(fill="x", pady=1)
+
+        _last_pos = (0, 0)
+
+        def _poll_reposition():
+            nonlocal _last_pos
+            if self._popup and self._popup.winfo_exists():
+                x = self._format_entry.winfo_rootx()
+                y = self._format_entry.winfo_rooty() + self._format_entry.winfo_height() + 4
+                if (x, y) != _last_pos:
+                    _last_pos = (x, y)
+                    self._popup.geometry(f"+{x}+{y}")
+            self._reposition_timer = self.after(200, _poll_reposition)
+
+        popup.update_idletasks()
+        _poll_reposition()
+
+        def outside_popup(w):
+            while w:
+                if w == popup:
+                    return False
+                try:
+                    w = w.master
+                except Exception:
+                    break
+            return True
+
+        root = self.winfo_toplevel()
+        bind_id = root.bind("<Button-1>", lambda e: dismiss() if outside_popup(e.widget) else None, add="+")
+        self._popup_dismiss_id = bind_id
+        popup.bind("<Escape>", lambda e: dismiss())
 
     def _start_convert(self):
         if self._converting:
