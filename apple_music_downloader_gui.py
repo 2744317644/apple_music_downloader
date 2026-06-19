@@ -1413,7 +1413,7 @@ class MainPage(AppPage):
                                         fg_color=c["input_bg"], text_color=c["text"],
                                         border_color=c["border"],
                                         font=ctk.CTkFont(family=f, size=13),
-                                        width=150)
+                                        width=150, justify="center")
         self._mode_entry.pack(side="left", padx=(0, 8))
         self._mode_entry.insert(0, self._mode_name("album"))
         self._mode_entry.configure(state="readonly")
@@ -2200,10 +2200,10 @@ class ConvertPage(AppPage):
 
         self._format_var = ctk.StringVar(value="FLAC")
         self._format_entry = ctk.CTkEntry(btn_frame, height=30, corner_radius=6,
-                                           fg_color=c["input_bg"], text_color=c["text"],
-                                           border_color=c["border"],
-                                           font=ctk.CTkFont(family=f, size=12),
-                                           width=70)
+                                          fg_color=c["input_bg"], text_color=c["text"],
+                                          border_color=c["border"],
+                                          font=ctk.CTkFont(family=f, size=12),
+                                          width=70, justify="center")
         self._format_entry.pack(side="left", padx=(0, 6))
         self._format_entry.insert(0, "FLAC")
         self._format_entry.configure(state="readonly")
