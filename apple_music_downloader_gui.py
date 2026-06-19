@@ -2380,9 +2380,10 @@ class ConvertPage(AppPage):
                         if result.returncode == 0:
                             ok_count += 1
                             if result.stderr.strip():
-                                for line in result.stderr.strip().split('\n')[-3:]:
-                                    if line.strip():
-                                        self.after(0, lambda l=line: self.log("  " + l.strip()))
+                                for line in result.stderr.strip().split('\n'):
+                                    s = line.strip()
+                                    if s and ("wrote" in s or "ratio" in s):
+                                        self.after(0, lambda l=s: self.log("  " + l))
                         else:
                             self.after(0, lambda n=name: self.log(self.t("convert_failed", file=n)))
                             if result.stderr.strip():
@@ -2433,9 +2434,10 @@ class ConvertPage(AppPage):
                             ok_count += 1
                             stderr_text = result_stderr.decode(errors="replace").strip() if result_stderr else ""
                             if stderr_text:
-                                for line in stderr_text.split('\n')[-3:]:
-                                    if line.strip():
-                                        self.after(0, lambda l=line: self.log("  " + l.strip()))
+                                for line in stderr_text.split('\n'):
+                                    s = line.strip()
+                                    if s and ("wrote" in s or "ratio" in s):
+                                        self.after(0, lambda l=s: self.log("  " + l))
                         else:
                             self.after(0, lambda n=name: self.log(self.t("convert_failed", file=n)))
                             stderr_text = result_stderr.decode(errors="replace").strip()[:200] if result_stderr else ""
@@ -2455,9 +2457,10 @@ class ConvertPage(AppPage):
                     if result.returncode == 0:
                         ok_count += 1
                         if result.stderr.strip():
-                            for line in result.stderr.strip().split('\n')[-3:]:
-                                if line.strip():
-                                    self.after(0, lambda l=line: self.log("  " + l.strip()))
+                            for line in result.stderr.strip().split('\n'):
+                                s = line.strip()
+                                if s and ("wrote" in s or "ratio" in s):
+                                    self.after(0, lambda l=s: self.log("  " + l))
                     else:
                         self.after(0, lambda n=name: self.log(self.t("convert_failed", file=n)))
                         if result.stderr.strip():
