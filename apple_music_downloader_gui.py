@@ -78,6 +78,20 @@ def load_config_content():
     return ""
 
 
+def get_download_folder():
+    """根据 config.yaml 的 alac-save-folder 拼接实际下载目录"""
+    try:
+        content = load_config_content()
+        m = re.search(r'^alac-save-folder:\s*"?([^"\n\r]+)"?\s*$', content, re.MULTILINE)
+        if m:
+            folder = m.group(1).strip()
+            if folder:
+                return os.path.join(os.path.expanduser("~"), "Downloads", folder)
+    except Exception:
+        pass
+    return DOWNLOAD_DIR
+
+
 FONT_FAMILY = "Microsoft YaHei"
 MONO_FAMILY = "Consolas"
 APP_ICON = os.path.join(DATA_DIR, "assets", "app_icon.ico")
@@ -1484,7 +1498,7 @@ class MainPage(AppPage):
         self._status_text.pack(side="left", padx=10, pady=2); self._reg(self._status_text, "ready")
 
         self._output_path_label = ctk.CTkLabel(self.status_bar,
-                                               text=self.t("output_to", path=DOWNLOAD_DIR),
+                                               text=self.t("output_to", path=get_download_folder()),
                                                font=ctk.CTkFont(family=f, size=10),
                                                text_color=c["text_secondary"])
         self._output_path_label.pack(side="right", padx=(0, 10), pady=2)
@@ -1503,7 +1517,7 @@ class MainPage(AppPage):
         self._url_var.set("")
 
     def _open_output_dir(self):
-        os.startfile(DOWNLOAD_DIR)
+        os.startfile(get_download_folder())
 
     def _on_download_done(self):
         self._reset_download_state()
@@ -1600,7 +1614,7 @@ class MainPage(AppPage):
 
     def refresh_language(self):
         super().refresh_language()
-        self._output_path_label.configure(text=self.t("output_to", path=DOWNLOAD_DIR))
+        self._output_path_label.configure(text=self.t("output_to", path=get_download_folder()))
         current_key = self._mode_var.get()
         name = self._mode_name(current_key)
         self._mode_entry.configure(state="normal")
@@ -2164,7 +2178,7 @@ class StatusPage(AppPage):
 class ConvertPage(AppPage):
     def __init__(self, parent, app):
         super().__init__(parent, app)
-        self._source_dir = os.path.join(os.path.expanduser("~"), "Downloads", "AM-DL downloads")
+        self._source_dir = get_download_folder()
         self._converting = False
         self._format_var = None
         self._popup = None
