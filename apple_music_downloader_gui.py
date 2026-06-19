@@ -1634,7 +1634,9 @@ class MainPage(AppPage):
     def _show_mode_popup(self):
         if self._popup and self._popup.winfo_exists():
             self._popup.destroy()
-            self._popup = None
+        self._popup = None
+        self._app_unbind(getattr(self, '_popup_bind_id', None))
+        self._popup_bind_id = None
         if self._reposition_timer is not None:
             self.after_cancel(self._reposition_timer)
             self._reposition_timer = None
@@ -1656,14 +1658,6 @@ class MainPage(AppPage):
             self._mode_entry.configure(state="readonly")
             self._on_mode_change(key)
             dismiss()
-
-        def _reposition():
-            if self._popup and self._popup.winfo_exists():
-                x = self._mode_entry.winfo_rootx() - self.winfo_rootx()
-                y = self._mode_entry.winfo_rooty() + self._mode_entry.winfo_height() + 2 - self.winfo_rooty()
-                self._popup.place(x=x, y=y)
-                self._popup.lift()
-            self._reposition_timer = self.after(200, _reposition)
 
         def dismiss():
             if self._reposition_timer is not None:
@@ -1689,7 +1683,8 @@ class MainPage(AppPage):
             btn.pack(fill="x", pady=1, padx=4)
 
         popup.update_idletasks()
-        _reposition()
+        popup.place(in_=self._mode_entry, x=0, rely=1.0, y=2, anchor="nw")
+        popup.lift()
         self._popup_bind_id = self._app_bind(
             lambda e: dismiss() if not self._is_inside_popup(e.widget) else None
         )
@@ -2267,7 +2262,9 @@ class ConvertPage(AppPage):
     def _show_format_popup(self):
         if self._popup and self._popup.winfo_exists():
             self._popup.destroy()
-            self._popup = None
+        self._popup = None
+        self._app_unbind(getattr(self, '_popup_bind_id', None))
+        self._popup_bind_id = None
         if self._reposition_timer is not None:
             self.after_cancel(self._reposition_timer)
             self._reposition_timer = None
@@ -2287,14 +2284,6 @@ class ConvertPage(AppPage):
             self._format_entry.insert(0, fmt)
             self._format_entry.configure(state="readonly")
             dismiss()
-
-        def _reposition():
-            if self._popup and self._popup.winfo_exists():
-                x = self._format_entry.winfo_rootx() - self.winfo_rootx()
-                y = self._format_entry.winfo_rooty() + self._format_entry.winfo_height() + 2 - self.winfo_rooty()
-                self._popup.place(x=x, y=y)
-                self._popup.lift()
-            self._reposition_timer = self.after(200, _reposition)
 
         def dismiss():
             if self._reposition_timer is not None:
@@ -2319,7 +2308,8 @@ class ConvertPage(AppPage):
             btn.pack(fill="x", pady=1, padx=2)
 
         popup.update_idletasks()
-        _reposition()
+        popup.place(in_=self._format_entry, x=0, rely=1.0, y=2, anchor="nw")
+        popup.lift()
         self._popup_bind_id = self._app_bind(
             lambda e: dismiss() if not self._is_inside_popup(e.widget) else None
         )
