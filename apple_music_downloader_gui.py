@@ -1351,7 +1351,6 @@ class MainPage(AppPage):
         self._log_queue = queue.Queue()
         self._flush_timer = None
         self._popup = None
-        self._popup_dismiss_id = None
         self._reposition_timer = None
         self._dl_proc = None
         self._downloading = False
@@ -1624,12 +1623,6 @@ class MainPage(AppPage):
         if self._popup and self._popup.winfo_exists():
             self._popup.destroy()
             self._popup = None
-        if self._popup_dismiss_id is not None:
-            try:
-                self.winfo_toplevel().unbind("<Button-1>", self._popup_dismiss_id)
-            except Exception:
-                pass
-            self._popup_dismiss_id = None
         if self._reposition_timer is not None:
             self.after_cancel(self._reposition_timer)
             self._reposition_timer = None
@@ -1637,16 +1630,10 @@ class MainPage(AppPage):
         c = self.app.colors
         f = FONT_FAMILY
 
-        popup = ctk.CTkToplevel(self)
-        popup.overrideredirect(True)
-        popup.transient(self.winfo_toplevel())
-        popup.configure(fg_color=c["surface"])
-        popup.configure(border_color=c["border"], border_width=1)
-
+        popup = ctk.CTkFrame(self, fg_color=c["surface"],
+                             border_color=c["border"], border_width=1,
+                             corner_radius=6)
         self._popup = popup
-
-        frame = ctk.CTkFrame(popup, fg_color="transparent")
-        frame.pack(fill="both", expand=True, padx=6, pady=6)
 
         def select(key, name):
             self._mode_var.set(key)
@@ -1657,16 +1644,10 @@ class MainPage(AppPage):
             self._on_mode_change(key)
             dismiss()
 
-        def dismiss(*args):
+        def dismiss():
             if self._reposition_timer is not None:
                 self.after_cancel(self._reposition_timer)
                 self._reposition_timer = None
-            if self._popup_dismiss_id is not None:
-                try:
-                    self.winfo_toplevel().unbind("<Button-1>", self._popup_dismiss_id)
-                except Exception:
-                    pass
-                self._popup_dismiss_id = None
             if self._popup:
                 try:
                     self._popup.destroy()
@@ -1676,43 +1657,35 @@ class MainPage(AppPage):
 
         for i, (key, _name, _) in enumerate(MODE_SPECS):
             name = self._mode_name(key)
-            btn = ctk.CTkButton(frame, text=name, anchor="w",
+            btn = ctk.CTkButton(popup, text=name, anchor="w",
                                 fg_color="transparent", hover_color=c["input_bg"],
                                 text_color=c["text"],
                                 font=ctk.CTkFont(family=f, size=13),
                                 corner_radius=6, height=32, width=190,
                                 command=lambda k=key, n=name: select(k, n))
-            btn.pack(fill="x", pady=1)
+            btn.pack(fill="x", pady=1, padx=4)
 
-        _last_pos = (0, 0)
+        self.update_idletasks()
+        x = self._mode_entry.winfo_x()
+        y = self._mode_entry.winfo_y() + self._mode_entry.winfo_height() + 2
+        popup.place(x=x, y=y)
 
         def _poll_reposition():
-            nonlocal _last_pos
             if self._popup and self._popup.winfo_exists():
-                x = self._mode_entry.winfo_rootx()
-                y = self._mode_entry.winfo_rooty() + self._mode_entry.winfo_height() + 4
-                if (x, y) != _last_pos:
-                    _last_pos = (x, y)
-                    self._popup.geometry(f"+{x}+{y}")
+                nx = self._mode_entry.winfo_x()
+                ny = self._mode_entry.winfo_y() + self._mode_entry.winfo_height() + 2
+                self._popup.place(x=nx, y=ny)
             self._reposition_timer = self.after(200, _poll_reposition)
-
-        popup.update_idletasks()
         _poll_reposition()
 
-        def outside_popup(w):
-            while w:
-                if w == popup:
-                    return False
-                try:
-                    w = w.master
-                except Exception:
-                    break
-            return True
+        self.bind("<Button-1>", lambda e: dismiss() if not self._is_inside_popup(e.widget) else None, add="+")
 
-        root = self.winfo_toplevel()
-        bind_id = root.bind("<Button-1>", lambda e: dismiss() if outside_popup(e.widget) else None, add="+")
-        self._popup_dismiss_id = bind_id
-        popup.bind("<Escape>", lambda e: dismiss())
+    def _is_inside_popup(self, w):
+        while w:
+            if w == self._popup:
+                return True
+            w = w.master
+        return False
 
     def _on_mode_change(self, key):
         for w in self._extra_widgets:
@@ -2184,7 +2157,6 @@ class ConvertPage(AppPage):
         self._converting = False
         self._format_var = None
         self._popup = None
-        self._popup_dismiss_id = None
         self._reposition_timer = None
         self.build_ui()
 
@@ -2282,27 +2254,16 @@ class ConvertPage(AppPage):
         if self._popup and self._popup.winfo_exists():
             self._popup.destroy()
             self._popup = None
-        if self._popup_dismiss_id is not None:
-            try:
-                self.winfo_toplevel().unbind("<Button-1>", self._popup_dismiss_id)
-            except Exception:
-                pass
-            self._popup_dismiss_id = None
         if self._reposition_timer is not None:
             self.after_cancel(self._reposition_timer)
             self._reposition_timer = None
 
         c = self.app.colors
         f = FONT_FAMILY
-        popup = ctk.CTkToplevel(self)
-        popup.overrideredirect(True)
-        popup.transient(self.winfo_toplevel())
-        popup.configure(fg_color=c["surface"])
-        popup.configure(border_color=c["border"], border_width=1)
+        popup = ctk.CTkFrame(self, fg_color=c["surface"],
+                             border_color=c["border"], border_width=1,
+                             corner_radius=6)
         self._popup = popup
-
-        frame = ctk.CTkFrame(popup, fg_color="transparent")
-        frame.pack(fill="both", expand=True, padx=6, pady=6)
 
         def select(fmt):
             self._format_var.set(fmt)
@@ -2312,16 +2273,10 @@ class ConvertPage(AppPage):
             self._format_entry.configure(state="readonly")
             dismiss()
 
-        def dismiss(*args):
+        def dismiss():
             if self._reposition_timer is not None:
                 self.after_cancel(self._reposition_timer)
                 self._reposition_timer = None
-            if self._popup_dismiss_id is not None:
-                try:
-                    self.winfo_toplevel().unbind("<Button-1>", self._popup_dismiss_id)
-                except Exception:
-                    pass
-                self._popup_dismiss_id = None
             if self._popup:
                 try:
                     self._popup.destroy()
@@ -2330,43 +2285,35 @@ class ConvertPage(AppPage):
                 self._popup = None
 
         for fmt in ["FLAC", "WAV"]:
-            btn = ctk.CTkButton(frame, text=fmt, anchor="w",
+            btn = ctk.CTkButton(popup, text=fmt, anchor="w",
                                 fg_color="transparent", hover_color=c["input_bg"],
                                 text_color=c["text"],
                                 font=ctk.CTkFont(family=f, size=13),
                                 corner_radius=6, height=32, width=190,
                                 command=lambda f=fmt: select(f))
-            btn.pack(fill="x", pady=1)
+            btn.pack(fill="x", pady=1, padx=4)
 
-        _last_pos = (0, 0)
+        self.update_idletasks()
+        x = self._format_entry.winfo_x()
+        y = self._format_entry.winfo_y() + self._format_entry.winfo_height() + 2
+        popup.place(x=x, y=y)
 
         def _poll_reposition():
-            nonlocal _last_pos
             if self._popup and self._popup.winfo_exists():
-                x = self._format_entry.winfo_rootx()
-                y = self._format_entry.winfo_rooty() + self._format_entry.winfo_height() + 4
-                if (x, y) != _last_pos:
-                    _last_pos = (x, y)
-                    self._popup.geometry(f"+{x}+{y}")
+                nx = self._format_entry.winfo_x()
+                ny = self._format_entry.winfo_y() + self._format_entry.winfo_height() + 2
+                self._popup.place(x=nx, y=ny)
             self._reposition_timer = self.after(200, _poll_reposition)
-
-        popup.update_idletasks()
         _poll_reposition()
 
-        def outside_popup(w):
-            while w:
-                if w == popup:
-                    return False
-                try:
-                    w = w.master
-                except Exception:
-                    break
-            return True
+        self.bind("<Button-1>", lambda e: dismiss() if not self._is_inside_popup(e.widget) else None, add="+")
 
-        root = self.winfo_toplevel()
-        bind_id = root.bind("<Button-1>", lambda e: dismiss() if outside_popup(e.widget) else None, add="+")
-        self._popup_dismiss_id = bind_id
-        popup.bind("<Escape>", lambda e: dismiss())
+    def _is_inside_popup(self, w):
+        while w:
+            if w == self._popup:
+                return True
+            w = w.master
+        return False
 
     def _start_convert(self):
         if self._converting:
