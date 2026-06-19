@@ -48,6 +48,14 @@ DL_IMAGE = "apple-music-downloader:local"
 
 FLAC_EXE = os.environ.get("FLAC_EXE", os.path.join(DATA_DIR, "assets", "flac.exe"))
 
+# Auto-detect flac.exe from common foobar2000 install paths as fallback
+if not os.path.isfile(FLAC_EXE):
+    for fb2k in [r"D:\SoftWare\foobar2000", r"C:\Program Files\foobar2000", r"C:\Program Files (x86)\foobar2000"]:
+        path = os.path.join(fb2k, "encoders", "flac.exe")
+        if os.path.isfile(path):
+            FLAC_EXE = path
+            break
+
 
 def get_config_path():
     """返回配置文件路径：若不存在则从示例复制"""
