@@ -896,6 +896,18 @@ class SetupPage(AppPage):
         self.retry_btn.pack_forget()
         self.start_docker_btn.pack_forget()
 
+        # Check Docker daemon first
+        if subprocess.call(["docker", "info"],
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL,
+                           startupinfo=_SI, creationflags=_CF) != 0:
+            self.log("Docker daemon not running")
+            self.set_status("Please start Docker Desktop first")
+            self.start_docker_btn.pack(pady=8)
+            return
+
+        self.log("Docker OK")
+
         need_wrapper = not _run("docker", "images", "-q", WRAPPER_IMAGE, silent=True)
         need_downloader = not _run("docker", "images", "-q", DL_IMAGE, silent=True)
 
@@ -903,7 +915,6 @@ class SetupPage(AppPage):
             threading.Thread(target=self._run_setup, daemon=True).start()
             return
 
-        # Delay dialog so SetupPage renders first
         self.after(200, self._prompt_local_image)
 
     def _prompt_local_image(self):
