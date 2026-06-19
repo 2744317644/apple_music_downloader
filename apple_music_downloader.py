@@ -417,6 +417,10 @@ def check_prerequisites(image_dir=None):
         print(f"{E}[ERROR] Docker is not installed or not in PATH.{R}")
         sys.exit(1)
 
+    if subprocess.call(["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) != 0:
+        print(f"{E}[ERROR] Docker daemon is not running. Please start Docker Desktop first.{R}")
+        sys.exit(1)
+
     os.makedirs(APP_DATA_DIR, exist_ok=True)
     config_path = get_config_path()
     if not config_path:
