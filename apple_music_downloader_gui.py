@@ -48,14 +48,6 @@ DL_IMAGE = "apple-music-downloader:local"
 
 FLAC_EXE = os.environ.get("FLAC_EXE", os.path.join(DATA_DIR, "assets", "flac.exe"))
 
-# Auto-detect flac.exe from common foobar2000 install paths as fallback
-if not os.path.isfile(FLAC_EXE):
-    for fb2k in [r"D:\SoftWare\foobar2000", r"C:\Program Files\foobar2000", r"C:\Program Files (x86)\foobar2000"]:
-        path = os.path.join(fb2k, "encoders", "flac.exe")
-        if os.path.isfile(path):
-            FLAC_EXE = path
-            break
-
 
 def get_config_path():
     """返回配置文件路径：若不存在则从示例复制"""
@@ -2190,6 +2182,7 @@ class ConvertPage(AppPage):
         super().__init__(parent, app)
         self._source_dir = DOWNLOAD_DIR
         self._converting = False
+        self._format_var = None
         self.build_ui()
 
     def build_ui(self):
@@ -2218,6 +2211,16 @@ class ConvertPage(AppPage):
                                               command=self._select_dir)
         self._select_dir_btn.pack(side="left", padx=(0, 6))
         self._reg(self._select_dir_btn, "convert_select_dir")
+
+        self._format_var = ctk.StringVar(value="FLAC")
+        self._format_menu = ctk.CTkOptionMenu(btn_frame, values=["FLAC", "WAV"],
+                                               variable=self._format_var,
+                                               width=70, height=30, corner_radius=6,
+                                               fg_color=c["input_bg"], text_color=c["text"],
+                                               button_color=c["primary"],
+                                               button_hover_color=c["primary_hover"],
+                                               font=ctk.CTkFont(family=f, size=12))
+        self._format_menu.pack(side="left", padx=(0, 6))
 
         self._convert_btn = ctk.CTkButton(btn_frame, text=self.t("convert_btn"),
                                            width=90, height=30, corner_radius=6,
@@ -2307,18 +2310,23 @@ class ConvertPage(AppPage):
         self.after(0, lambda: self.log(self.t("convert_found", count=len(files))))
         total = len(files)
         ok_count = 0
+        fmt = self._format_var.get().lower()
 
         for i, src in enumerate(files):
             base = os.path.splitext(src)[0]
-            out = base + ".flac"
+            out = base + "." + fmt
             name = os.path.basename(src)
 
             self.after(0, lambda n=name: self.log(self.t("convert_converting", file=n)))
             self.after(0, lambda v=(i+1)/total: self._progress.set(v))
 
             try:
+                if fmt == "wav":
+                    args = [flac, "-d", "-f", "-o", out, src]
+                else:
+                    args = [flac, "-6", "-f", "-o", out, src]
                 result = subprocess.run(
-                    [flac, "-6", "-f", "-o", out, src],
+                    args,
                     capture_output=True, text=True,
                     startupinfo=_SI, creationflags=_CF
                 )
