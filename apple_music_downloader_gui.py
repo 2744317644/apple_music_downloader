@@ -2391,6 +2391,7 @@ class ConvertPage(AppPage):
 
         for i, src in enumerate(files):
             base = os.path.splitext(src)[0]
+            base = base.replace(". ", ".", 1)
             out = base + "." + fmt
             name = os.path.basename(src)
             ext = os.path.splitext(src)[1].lower()
