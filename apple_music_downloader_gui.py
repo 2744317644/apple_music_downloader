@@ -2358,6 +2358,7 @@ class ConvertPage(AppPage):
         ok_count = 0
         fmt = self._format_var.get().lower()
         ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
+        ffprobe = shutil.which("ffprobe") or "ffprobe"
 
         for i, src in enumerate(files):
             base = os.path.splitext(src)[0]
@@ -2388,13 +2389,39 @@ class ConvertPage(AppPage):
                                 self.after(0, lambda e=result.stderr.strip()[:200]: self.log(f"  [ERROR] {e}"))
                         continue
                     else:
+                        # Probe audio params for raw PCM pipe
+                        sample_rate = "44100"
+                        channels = "2"
+                        bps = "16"
+                        try:
+                            p = subprocess.run(
+                                [ffprobe, "-v", "error", "-select_streams", "a:0",
+                                 "-show_entries", "stream=sample_rate,channels,bits_per_raw_sample",
+                                 "-of", "csv=p=0", src],
+                                capture_output=True, text=True,
+                                startupinfo=_SI, creationflags=_CF
+                            )
+                            if p.returncode == 0 and p.stdout.strip():
+                                parts = p.stdout.strip().split(",")
+                                if len(parts) > 0 and parts[0] != "N/A":
+                                    sample_rate = parts[0]
+                                if len(parts) > 1 and parts[1] != "N/A":
+                                    channels = parts[1]
+                                if len(parts) > 2 and parts[2] != "N/A":
+                                    bps = parts[2]
+                        except Exception:
+                            pass
+
                         ffmpeg_proc = subprocess.Popen(
-                            [ffmpeg, "-i", src, "-f", "wav", "-loglevel", "error", "-"],
+                            [ffmpeg, "-i", src, "-f", "s16le", "-acodec", "pcm_s16le", "-loglevel", "error", "-"],
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                             startupinfo=_SI, creationflags=_CF
                         )
                         flac_proc = subprocess.Popen(
-                            [flac, "-6", "-f", "-o", out, "-"],
+                            [flac, "-6", "-f", "--sample-rate=" + sample_rate,
+                             "--channels=" + channels, "--bps=" + bps,
+                             "--sign=signed", "--endian=little",
+                             "-o", out, "-"],
                             stdin=ffmpeg_proc.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             startupinfo=_SI, creationflags=_CF
                         )
