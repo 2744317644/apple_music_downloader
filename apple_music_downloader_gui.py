@@ -1676,7 +1676,7 @@ class MainPage(AppPage):
 
         for i, (key, _name, _) in enumerate(MODE_SPECS):
             name = self._mode_name(key)
-            btn = ctk.CTkButton(popup, text=name, anchor="center",
+            btn = ctk.CTkButton(popup, text=name, anchor="w",
                                 fg_color="transparent", hover_color=c["input_bg"],
                                 text_color=c["text"],
                                 font=ctk.CTkFont(family=f, size=13),
@@ -2301,7 +2301,7 @@ class ConvertPage(AppPage):
                 self._popup = None
 
         for fmt in ["FLAC", "WAV"]:
-            btn = ctk.CTkButton(popup, text=fmt, anchor="center",
+            btn = ctk.CTkButton(popup, text=fmt, anchor="w",
                                 fg_color="transparent", hover_color=c["input_bg"],
                                 text_color=c["text"],
                                 font=ctk.CTkFont(family=f, size=12),
