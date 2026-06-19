@@ -804,6 +804,18 @@ class AppPage(ctk.CTkFrame):
             except Exception:
                 pass
 
+    def _app_bind(self, callback):
+        """Bind a global click handler on the root window, returns bind id."""
+        return self.winfo_toplevel().bind("<Button-1>", callback, add="+")
+
+    def _app_unbind(self, bind_id):
+        """Remove a global click handler previously added via _app_bind."""
+        if bind_id:
+            try:
+                self.winfo_toplevel().unbind("<Button-1>", bind_id)
+            except Exception:
+                pass
+
 
 class SetupPage(AppPage):
     def __init__(self, parent, app):
@@ -1634,6 +1646,7 @@ class MainPage(AppPage):
                              border_color=c["border"], border_width=1,
                              corner_radius=6)
         self._popup = popup
+        self._popup_bind_id = None
 
         def select(key, name):
             self._mode_var.set(key)
@@ -1644,10 +1657,20 @@ class MainPage(AppPage):
             self._on_mode_change(key)
             dismiss()
 
+        def _reposition():
+            if self._popup and self._popup.winfo_exists():
+                x = self._mode_entry.winfo_rootx() - self.winfo_rootx()
+                y = self._mode_entry.winfo_rooty() + self._mode_entry.winfo_height() + 2 - self.winfo_rooty()
+                self._popup.place(x=x, y=y)
+                self._popup.lift()
+            self._reposition_timer = self.after(200, _reposition)
+
         def dismiss():
             if self._reposition_timer is not None:
                 self.after_cancel(self._reposition_timer)
                 self._reposition_timer = None
+            self._app_unbind(self._popup_bind_id)
+            self._popup_bind_id = None
             if self._popup:
                 try:
                     self._popup.destroy()
@@ -1665,20 +1688,10 @@ class MainPage(AppPage):
                                 command=lambda k=key, n=name: select(k, n))
             btn.pack(fill="x", pady=1, padx=4)
 
-        self.update_idletasks()
-        x = self._mode_entry.winfo_x()
-        y = self._mode_entry.winfo_y() + self._mode_entry.winfo_height() + 2
-        popup.place(x=x, y=y)
-
-        def _poll_reposition():
-            if self._popup and self._popup.winfo_exists():
-                nx = self._mode_entry.winfo_x()
-                ny = self._mode_entry.winfo_y() + self._mode_entry.winfo_height() + 2
-                self._popup.place(x=nx, y=ny)
-            self._reposition_timer = self.after(200, _poll_reposition)
-        _poll_reposition()
-
-        self.bind("<Button-1>", lambda e: dismiss() if not self._is_inside_popup(e.widget) else None, add="+")
+        _reposition()
+        self._popup_bind_id = self._app_bind(
+            lambda e: dismiss() if not self._is_inside_popup(e.widget) else None
+        )
 
     def _is_inside_popup(self, w):
         while w:
@@ -2264,6 +2277,7 @@ class ConvertPage(AppPage):
                              border_color=c["border"], border_width=1,
                              corner_radius=6)
         self._popup = popup
+        self._popup_bind_id = None
 
         def select(fmt):
             self._format_var.set(fmt)
@@ -2273,10 +2287,20 @@ class ConvertPage(AppPage):
             self._format_entry.configure(state="readonly")
             dismiss()
 
+        def _reposition():
+            if self._popup and self._popup.winfo_exists():
+                x = self._format_entry.winfo_rootx() - self.winfo_rootx()
+                y = self._format_entry.winfo_rooty() + self._format_entry.winfo_height() + 2 - self.winfo_rooty()
+                self._popup.place(x=x, y=y)
+                self._popup.lift()
+            self._reposition_timer = self.after(200, _reposition)
+
         def dismiss():
             if self._reposition_timer is not None:
                 self.after_cancel(self._reposition_timer)
                 self._reposition_timer = None
+            self._app_unbind(self._popup_bind_id)
+            self._popup_bind_id = None
             if self._popup:
                 try:
                     self._popup.destroy()
@@ -2293,20 +2317,10 @@ class ConvertPage(AppPage):
                                 command=lambda f=fmt: select(f))
             btn.pack(fill="x", pady=1, padx=4)
 
-        self.update_idletasks()
-        x = self._format_entry.winfo_x()
-        y = self._format_entry.winfo_y() + self._format_entry.winfo_height() + 2
-        popup.place(x=x, y=y)
-
-        def _poll_reposition():
-            if self._popup and self._popup.winfo_exists():
-                nx = self._format_entry.winfo_x()
-                ny = self._format_entry.winfo_y() + self._format_entry.winfo_height() + 2
-                self._popup.place(x=nx, y=ny)
-            self._reposition_timer = self.after(200, _poll_reposition)
-        _poll_reposition()
-
-        self.bind("<Button-1>", lambda e: dismiss() if not self._is_inside_popup(e.widget) else None, add="+")
+        _reposition()
+        self._popup_bind_id = self._app_bind(
+            lambda e: dismiss() if not self._is_inside_popup(e.widget) else None
+        )
 
     def _is_inside_popup(self, w):
         while w:
