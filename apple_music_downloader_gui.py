@@ -2327,9 +2327,39 @@ class ConvertPage(AppPage):
         self._log.configure(state="normal")
         self._log.delete("1.0", "end")
         self._log.configure(state="disabled")
+
+        ffmpeg = shutil.which("ffmpeg")
+        ffprobe = shutil.which("ffprobe")
+        if not ffmpeg or not ffprobe:
+            self.log("[WARN] ffmpeg/ffprobe not found, attempting winget install...")
+            self._converting = True
+            self._convert_btn.configure(state="disabled", text="...")
+            threading.Thread(target=self._try_install_ffmpeg, daemon=True).start()
+            return
+
         self._converting = True
         self._convert_btn.configure(state="disabled", text="...")
         threading.Thread(target=self._do_convert, daemon=True).start()
+
+    def _try_install_ffmpeg(self):
+        try:
+            result = subprocess.run(
+                ["winget", "install", "--id", "Gyan.FFmpeg", "--accept-source-agreements", "--accept-package-agreements", "--silent"],
+                capture_output=True, text=True,
+                startupinfo=_SI, creationflags=_CF,
+                timeout=120
+            )
+            if result.returncode == 0:
+                self.after(0, lambda: self.log("[OK] ffmpeg installed, please restart convert"))
+            else:
+                self.after(0, lambda: self.log("[ERROR] winget install failed"))
+                self.after(0, lambda: self.log("[INFO] Install ffmpeg manually: https://ffmpeg.org/download.html"))
+        except FileNotFoundError:
+            self.after(0, lambda: self.log("[ERROR] winget not found"))
+            self.after(0, lambda: self.log("[INFO] Install ffmpeg manually: https://ffmpeg.org/download.html"))
+        except Exception as e:
+            self.after(0, lambda: self.log(f"[ERROR] {e}"))
+        self.after(0, self._reset_btn)
 
     def _do_convert(self):
         flac = FLAC_EXE
