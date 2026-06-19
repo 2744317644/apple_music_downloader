@@ -218,6 +218,7 @@ I18N = {
         "convert_failed": "失败: {file}",
         "convert_nothing": "未找到可转换的文件",
         "convert_complete": "转换完毕，共处理 {total} 个文件",
+        "convert_skip_exists": "已存在，跳过: {file}",
     },
     "en": {
         "app_title": "Apple Music Downloader",
@@ -301,6 +302,7 @@ I18N = {
         "convert_failed": "Failed: {file}",
         "convert_nothing": "No convertible files found",
         "convert_complete": "Conversion complete, total {total} files",
+        "convert_skip_exists": "Already exists, skip: {file}",
     },
 }
 
@@ -1674,7 +1676,7 @@ class MainPage(AppPage):
 
         for i, (key, _name, _) in enumerate(MODE_SPECS):
             name = self._mode_name(key)
-            btn = ctk.CTkButton(popup, text=name, anchor="w",
+            btn = ctk.CTkButton(popup, text=name, anchor="center",
                                 fg_color="transparent", hover_color=c["input_bg"],
                                 text_color=c["text"],
                                 font=ctk.CTkFont(family=f, size=13),
@@ -2398,6 +2400,7 @@ class ConvertPage(AppPage):
 
             # Skip if output file already exists
             if os.path.isfile(out):
+                self.after(0, lambda n=name: self.log(self.t("convert_skip_exists", file=n)))
                 continue
 
             self.after(0, lambda n=name: self.log(self.t("convert_converting", file=n)))
