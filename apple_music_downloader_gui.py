@@ -2412,8 +2412,9 @@ class ConvertPage(AppPage):
                         except Exception:
                             pass
 
+                        pcm_fmt = "s" + bps + "le"
                         ffmpeg_proc = subprocess.Popen(
-                            [ffmpeg, "-i", src, "-f", "s16le", "-acodec", "pcm_s16le", "-loglevel", "error", "-"],
+                            [ffmpeg, "-i", src, "-f", pcm_fmt, "-acodec", "pcm_s" + bps + "le", "-loglevel", "error", "-"],
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                             startupinfo=_SI, creationflags=_CF
                         )
