@@ -1688,6 +1688,7 @@ class MainPage(AppPage):
                                 command=lambda k=key, n=name: select(k, n))
             btn.pack(fill="x", pady=1, padx=4)
 
+        popup.update_idletasks()
         _reposition()
         self._popup_bind_id = self._app_bind(
             lambda e: dismiss() if not self._is_inside_popup(e.widget) else None
@@ -2309,14 +2310,15 @@ class ConvertPage(AppPage):
                 self._popup = None
 
         for fmt in ["FLAC", "WAV"]:
-            btn = ctk.CTkButton(popup, text=fmt, anchor="w",
+            btn = ctk.CTkButton(popup, text=fmt, anchor="center",
                                 fg_color="transparent", hover_color=c["input_bg"],
                                 text_color=c["text"],
-                                font=ctk.CTkFont(family=f, size=13),
-                                corner_radius=6, height=32, width=190,
+                                font=ctk.CTkFont(family=f, size=12),
+                                corner_radius=4, height=28, width=70,
                                 command=lambda f=fmt: select(f))
-            btn.pack(fill="x", pady=1, padx=4)
+            btn.pack(fill="x", pady=1, padx=2)
 
+        popup.update_idletasks()
         _reposition()
         self._popup_bind_id = self._app_bind(
             lambda e: dismiss() if not self._is_inside_popup(e.widget) else None
