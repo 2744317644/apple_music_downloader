@@ -212,7 +212,7 @@ I18N = {
         "convert_select_dir": "选择目录",
         "convert_source_dir": "源目录: {path}",
         "convert_scanning": "正在扫描文件...",
-        "convert_found": "找到 {count} 个 .m4a / .flac 文件",
+        "convert_found": "找到 {count} 个 .m4a 文件",
         "convert_converting": "正在转换: {file}",
         "convert_done": "转换完成: {count} 个文件",
         "convert_failed": "失败: {file}",
@@ -295,7 +295,7 @@ I18N = {
         "convert_select_dir": "Select Folder",
         "convert_source_dir": "Source: {path}",
         "convert_scanning": "Scanning files...",
-        "convert_found": "Found {count} .m4a / .flac files",
+        "convert_found": "Found {count} .m4a files",
         "convert_converting": "Converting: {file}",
         "convert_done": "Converted: {count} files",
         "convert_failed": "Failed: {file}",
@@ -2365,13 +2365,12 @@ class ConvertPage(AppPage):
         flac = FLAC_EXE
         self.after(0, lambda: self.log(self.t("convert_scanning")))
 
-        # Recursive scan for m4a and flac files
+        # Recursive scan for m4a files only
         files = []
         try:
             for root, dirs, filenames in os.walk(self._source_dir):
                 for f in sorted(filenames):
-                    ext = os.path.splitext(f)[1].lower()
-                    if ext in ('.m4a', '.flac'):
+                    if os.path.splitext(f)[1].lower() == '.m4a':
                         files.append(os.path.join(root, f))
         except Exception as e:
             self.after(0, lambda: self.log(f"[ERROR] {e}"))
@@ -2396,8 +2395,8 @@ class ConvertPage(AppPage):
             name = os.path.basename(src)
             ext = os.path.splitext(src)[1].lower()
 
-            # Skip if target same as source (e.g. .flac -> .flac)
-            if ext == "." + fmt:
+            # Skip if output file already exists
+            if os.path.isfile(out):
                 continue
 
             self.after(0, lambda n=name: self.log(self.t("convert_converting", file=n)))
@@ -2478,27 +2477,6 @@ class ConvertPage(AppPage):
                             if stderr_text:
                                 self.after(0, lambda e=stderr_text: self.log(f"  [ERROR] {e}"))
                         continue
-                else:  # .flac input
-                    if fmt == "wav":
-                        args = [flac, "-d", "-f", "-o", out, src]
-                    else:
-                        args = [flac, "-6", "-f", "-o", out, src]
-                    result = subprocess.run(
-                        args,
-                        capture_output=True, text=True,
-                        startupinfo=_SI, creationflags=_CF
-                    )
-                    if result.returncode == 0:
-                        ok_count += 1
-                        if result.stderr.strip():
-                            for line in result.stderr.strip().split('\n'):
-                                s = line.strip()
-                                if s and ("wrote" in s or "ratio" in s):
-                                    self.after(0, lambda l=s: self.log("  " + l))
-                    else:
-                        self.after(0, lambda n=name: self.log(self.t("convert_failed", file=n)))
-                        if result.stderr.strip():
-                            self.after(0, lambda e=result.stderr.strip()[:200]: self.log(f"  [ERROR] {e}"))
             except FileNotFoundError as fe:
                 self.after(0, lambda: self.log(f"[ERROR] {fe.filename} not found"))
                 self.after(0, lambda: self.log("[INFO] Install ffmpeg or place flac.exe in assets/"))
