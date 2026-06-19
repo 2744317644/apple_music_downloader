@@ -46,6 +46,8 @@ REGISTRY_MIRROR = os.environ.get("REGISTRY_MIRROR", "docker.m.daocloud.io")
 DL_SRC = os.environ.get("DL_SRC", os.path.join(DATA_DIR, "assets", "apple-music-downloader"))
 DL_IMAGE = "apple-music-downloader:local"
 
+FLAC_EXE = os.environ.get("FLAC_EXE", os.path.join(DATA_DIR, "assets", "flac.exe"))
+
 
 def get_config_path():
     """返回配置文件路径：若不存在则从示例复制"""
@@ -204,6 +206,18 @@ I18N = {
         "export_images": "导出镜像",
         "export_done": "导出完成",
         "export_failed": "导出失败",
+        "tab_convert": "转换",
+        "convert_title": "FLAC 转换",
+        "convert_btn": "开始转换",
+        "convert_select_dir": "选择目录",
+        "convert_source_dir": "源目录: {path}",
+        "convert_scanning": "正在扫描文件...",
+        "convert_found": "找到 {count} 个 .m4a / .flac 文件",
+        "convert_converting": "正在转换: {file}",
+        "convert_done": "转换完成: {count} 个文件",
+        "convert_failed": "失败: {file}",
+        "convert_nothing": "未找到可转换的文件",
+        "convert_complete": "转换完毕，共处理 {total} 个文件",
     },
     "en": {
         "app_title": "Apple Music Downloader",
@@ -275,6 +289,18 @@ I18N = {
         "export_images": "Export Images",
         "export_done": "Export Done",
         "export_failed": "Export Failed",
+        "tab_convert": "Convert",
+        "convert_title": "FLAC Convert",
+        "convert_btn": "Start Convert",
+        "convert_select_dir": "Select Folder",
+        "convert_source_dir": "Source: {path}",
+        "convert_scanning": "Scanning files...",
+        "convert_found": "Found {count} .m4a / .flac files",
+        "convert_converting": "Converting: {file}",
+        "convert_done": "Converted: {count} files",
+        "convert_failed": "Failed: {file}",
+        "convert_nothing": "No convertible files found",
+        "convert_complete": "Conversion complete, total {total} files",
     },
 }
 
@@ -1232,7 +1258,7 @@ class TabbedContainer(AppPage):
         self.tab_btns = {}
         sep = ctk.CTkFrame(self.sidebar, height=12, fg_color="transparent")
         sep.pack(fill="x")
-        self._tab_keys = [("download", "tab_download"), ("status", "tab_status"), ("config", "tab_config")]
+        self._tab_keys = [("download", "tab_download"), ("status", "tab_status"), ("config", "tab_config"), ("convert", "tab_convert")]
         for key, i18n_key in self._tab_keys:
             btn = ctk.CTkButton(self.sidebar, text=self.t(i18n_key), anchor="w",
                                 fg_color="transparent", hover_color=c["input_bg"],
@@ -1271,6 +1297,10 @@ class TabbedContainer(AppPage):
         self.status_page = StatusPage(self.content, app)
         self.pages["status"] = self.status_page
         self.status_page.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        self.convert_page = ConvertPage(self.content, app)
+        self.pages["convert"] = self.convert_page
+        self.convert_page.place(relx=0, rely=0, relwidth=1, relheight=1)
 
         self.show_tab("download")
 
@@ -2145,6 +2175,173 @@ class StatusPage(AppPage):
             header.configure(text=self.t(key))
         for (_lbl, i18n_key) in self._item_labels.values():
             _lbl.configure(text=self.t(i18n_key))
+
+
+class ConvertPage(AppPage):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self._source_dir = DOWNLOAD_DIR
+        self._converting = False
+        self.build_ui()
+
+    def build_ui(self):
+        c = self.app.colors
+        f = FONT_FAMILY
+
+        topbar = ctk.CTkFrame(self, fg_color=c["card"], height=44, corner_radius=0,
+                              border_color=c["divider"], border_width=1)
+        topbar.pack(fill="x")
+        topbar.pack_propagate(False)
+
+        self._convert_title = ctk.CTkLabel(topbar, text=self.t("convert_title"),
+                                           font=ctk.CTkFont(family=f, size=16, weight="bold"),
+                                           text_color=c["text"])
+        self._convert_title.pack(side="left", padx=16, pady=11)
+        self._reg(self._convert_title, "convert_title")
+
+        btn_frame = ctk.CTkFrame(topbar, fg_color="transparent")
+        btn_frame.pack(side="right", padx=6)
+
+        self._select_dir_btn = ctk.CTkButton(btn_frame, text=self.t("convert_select_dir"),
+                                              width=80, height=30, corner_radius=6,
+                                              fg_color=c["input_bg"], hover_color=c["divider"],
+                                              text_color=c["text"],
+                                              font=ctk.CTkFont(family=f, size=12),
+                                              command=self._select_dir)
+        self._select_dir_btn.pack(side="left", padx=(0, 6))
+        self._reg(self._select_dir_btn, "convert_select_dir")
+
+        self._convert_btn = ctk.CTkButton(btn_frame, text=self.t("convert_btn"),
+                                           width=90, height=30, corner_radius=6,
+                                           fg_color=c["primary"], hover_color=c["primary_hover"],
+                                           text_color="white",
+                                           font=ctk.CTkFont(family=f, size=12, weight="bold"),
+                                           command=self._start_convert)
+        self._convert_btn.pack(side="left")
+        self._reg(self._convert_btn, "convert_btn")
+
+        body = ctk.CTkFrame(self, fg_color=c["background"], corner_radius=0)
+        body.pack(fill="both", expand=True, padx=12, pady=8)
+
+        self._status_label = ctk.CTkLabel(body, text=self.t("convert_source_dir", path=self._source_dir),
+                                          font=ctk.CTkFont(family=f, size=12),
+                                          text_color=c["text_secondary"])
+        self._status_label.pack(anchor="w", pady=(0, 4))
+
+        self._progress = ctk.CTkProgressBar(body, width=400, height=4,
+                                            progress_color=c["primary"],
+                                            fg_color=c["divider"])
+        self._progress.pack(fill="x", pady=(0, 8))
+        self._progress.set(0)
+
+        self._log = ctk.CTkTextbox(body,
+                                    fg_color=c["card"], text_color=c["text"],
+                                    border_color=c["border"], border_width=1,
+                                    corner_radius=10,
+                                    font=ctk.CTkFont(family=MONO_FAMILY, size=12),
+                                    state="disabled",
+                                    wrap="none")
+        self._log.pack(fill="both", expand=True)
+
+    def log(self, msg):
+        if self._log:
+            self._log.configure(state="normal")
+            self._log.insert("end", msg + "\n")
+            self._log.see("end")
+            self._log.configure(state="disabled")
+
+    def on_show(self):
+        self._update_dir_label()
+
+    def _update_dir_label(self):
+        self._status_label.configure(text=self.t("convert_source_dir", path=self._source_dir))
+
+    def _select_dir(self):
+        from tkinter import filedialog
+        d = filedialog.askdirectory(title=self.t("convert_select_dir"), initialdir=self._source_dir)
+        if d:
+            self._source_dir = d
+            self._update_dir_label()
+
+    def _start_convert(self):
+        if self._converting:
+            return
+        self._log.configure(state="normal")
+        self._log.delete("1.0", "end")
+        self._log.configure(state="disabled")
+        self._converting = True
+        self._convert_btn.configure(state="disabled", text="...")
+        threading.Thread(target=self._do_convert, daemon=True).start()
+
+    def _do_convert(self):
+        flac = FLAC_EXE
+        self.after(0, lambda: self.log(self.t("convert_scanning")))
+
+        # Scan for m4a and flac files
+        files = []
+        try:
+            for f in sorted(os.listdir(self._source_dir)):
+                full = os.path.join(self._source_dir, f)
+                if os.path.isfile(full):
+                    ext = os.path.splitext(f)[1].lower()
+                    if ext in ('.m4a', '.flac'):
+                        files.append(full)
+        except Exception as e:
+            self.after(0, lambda: self.log(f"[ERROR] {e}"))
+            self.after(0, self._reset_btn)
+            return
+
+        if not files:
+            self.after(0, lambda: self.log(self.t("convert_nothing")))
+            self.after(0, self._reset_btn)
+            return
+
+        self.after(0, lambda: self.log(self.t("convert_found", count=len(files))))
+        total = len(files)
+        ok_count = 0
+
+        for i, src in enumerate(files):
+            base = os.path.splitext(src)[0]
+            out = base + ".flac"
+            name = os.path.basename(src)
+
+            self.after(0, lambda n=name: self.log(self.t("convert_converting", file=n)))
+            self.after(0, lambda v=(i+1)/total: self._progress.set(v))
+
+            try:
+                result = subprocess.run(
+                    [flac, "-6", "-f", "-o", out, src],
+                    capture_output=True, text=True,
+                    startupinfo=_SI, creationflags=_CF
+                )
+                if result.returncode == 0:
+                    ok_count += 1
+                    if result.stderr.strip():
+                        for line in result.stderr.strip().split('\n')[-3:]:
+                            if line.strip():
+                                self.after(0, lambda l=line: self.log("  " + l.strip()))
+                else:
+                    self.after(0, lambda n=name: self.log(self.t("convert_failed", file=n)))
+                    if result.stderr.strip():
+                        self.after(0, lambda e=result.stderr.strip()[:200]: self.log(f"  [ERROR] {e}"))
+            except FileNotFoundError:
+                self.after(0, lambda: self.log(f"[ERROR] flac.exe not found at: {flac}"))
+                self.after(0, lambda: self.log("[INFO] Place flac.exe in assets/ or set FLAC_EXE env var"))
+                break
+            except Exception as e:
+                self.after(0, lambda n=name, err=str(e): self.log(f"[ERROR] {n}: {err}"))
+
+        self.after(0, lambda: self._progress.set(1.0))
+        self.after(0, lambda: self.log(self.t("convert_complete", total=ok_count)))
+        self.after(0, self._reset_btn)
+
+    def _reset_btn(self):
+        self._converting = False
+        self._convert_btn.configure(state="normal", text=self.t("convert_btn"))
+
+    def refresh_language(self):
+        super().refresh_language()
+        self._update_dir_label()
 
 
 def main():
