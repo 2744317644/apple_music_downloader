@@ -506,9 +506,15 @@ def invoke_downloader(arguments, description):
                 "-v", f"{tmp_config}:/app/config.yaml",
                 DL_IMAGE]
         args.extend(arguments.split())
-        code = _live("docker", *args)
-        if code != 0:
+        for attempt in range(1, 4):
+            if attempt > 1:
+                print(f"\n{Y}[RETRY] Attempt {attempt}/3...{R}")
+            code = _live("docker", *args)
+            if code == 0:
+                break
             print(f"\n{Y}[WARN] Docker exited with code {code}{R}")
+            if attempt < 3:
+                time.sleep(2)
     finally:
         os.remove(tmp_config)
         print(f"\n{G}Output: {SCRIPT_DIR}{R}")

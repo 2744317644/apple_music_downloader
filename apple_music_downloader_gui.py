@@ -1840,46 +1840,55 @@ class MainPage(AppPage):
             )
         config_content = config_content.replace("127.0.0.1:10020", "host.docker.internal:10020")
         config_content = config_content.replace("127.0.0.1:20020", "host.docker.internal:20020")
-        fd, tmp_config = tempfile.mkstemp(suffix='.yaml', prefix='am_config_')
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            f.write(config_content)
-        try:
-            args = ["run", "--rm",
-                    "-v", f"{DOWNLOAD_DIR}:/downloads",
-                    "-v", f"{tmp_config}:/app/config.yaml",
-                    DL_IMAGE]
-            args.extend(arguments.split())
-            proc = subprocess.Popen(["docker"] + args,
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT,
-                                    text=True, encoding="utf-8", errors="replace",
-                                    startupinfo=_SI, creationflags=_CF)
-            self._dl_proc = proc
-            buf = ""
+
+        args = ["run", "--rm",
+                "-v", f"{DOWNLOAD_DIR}:/downloads",
+                DL_IMAGE]
+        args.extend(arguments.split())
+
+        for attempt in range(1, 4):
+            if attempt > 1:
+                self.log(f"[RETRY] Attempt {attempt}/3...")
+                time.sleep(2)
+
+            fd, tmp_config = tempfile.mkstemp(suffix='.yaml', prefix='am_config_')
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.write(config_content)
+
             try:
-                for ch in iter(lambda: proc.stdout.read(1), ""):
-                    if ch in ("\r", "\n"):
-                        if buf.strip():
-                            if "%" in buf:
-                                self.log_replace(buf.strip())
-                            else:
-                                self.log(buf.strip())
-                        buf = ""
-                    else:
-                        buf += ch
-                if buf.strip():
-                    self.log(buf.strip())
-                proc.wait()
-                if proc.returncode != 0:
+                proc = subprocess.Popen(["docker"] + args + ["-v", f"{tmp_config}:/app/config.yaml"],
+                                        stdout=subprocess.PIPE,
+                                        stderr=subprocess.STDOUT,
+                                        text=True, encoding="utf-8", errors="replace",
+                                        startupinfo=_SI, creationflags=_CF)
+                self._dl_proc = proc
+                buf = ""
+                try:
+                    for ch in iter(lambda: proc.stdout.read(1), ""):
+                        if ch in ("\r", "\n"):
+                            if buf.strip():
+                                if "%" in buf:
+                                    self.log_replace(buf.strip())
+                                else:
+                                    self.log(buf.strip())
+                            buf = ""
+                        else:
+                            buf += ch
+                    if buf.strip():
+                        self.log(buf.strip())
+                    proc.wait()
+                    if proc.returncode == 0:
+                        break
                     self.log(f"Exit code: {proc.returncode}")
-            except Exception:
-                pass
-        finally:
-            try:
-                os.remove(tmp_config)
-            except Exception:
-                pass
-        self.log(f"Done - output: {DOWNLOAD_DIR}")
+                except Exception:
+                    pass
+            finally:
+                try:
+                    os.remove(tmp_config)
+                except Exception:
+                    pass
+
+        self.log(f"Done - output: {get_download_folder()}")
         self.after(0, self._on_download_done)
 
 
