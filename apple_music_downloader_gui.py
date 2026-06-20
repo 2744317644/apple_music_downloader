@@ -1856,10 +1856,7 @@ class MainPage(AppPage):
         config_content = config_content.replace("127.0.0.1:10020", "host.docker.internal:10020")
         config_content = config_content.replace("127.0.0.1:20020", "host.docker.internal:20020")
 
-        args = ["run", "--rm",
-                "-v", f"{DOWNLOAD_DIR}:/downloads",
-                DL_IMAGE]
-        args.extend(arguments.split())
+        dl_args = arguments.split()
 
         for attempt in range(1, 4):
             if attempt > 1:
@@ -1871,7 +1868,11 @@ class MainPage(AppPage):
                 f.write(config_content)
 
             try:
-                proc = subprocess.Popen(["docker"] + args + ["-v", f"{tmp_config}:/app/config.yaml"],
+                proc = subprocess.Popen(
+                    ["docker", "run", "--rm",
+                     "-v", f"{DOWNLOAD_DIR}:/downloads",
+                     "-v", f"{tmp_config}:/app/config.yaml",
+                     DL_IMAGE] + dl_args,
                                         stdout=subprocess.PIPE,
                                         stderr=subprocess.STDOUT,
                                         text=True, encoding="utf-8", errors="replace",
