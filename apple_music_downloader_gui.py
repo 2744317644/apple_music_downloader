@@ -2519,7 +2519,7 @@ class ConvertPage(AppPage):
                         ffmpeg_proc = subprocess.Popen(
                             [ffmpeg, "-i", src, "-f", pcm_fmt, "-acodec", "pcm_s" + bps + "le", "-loglevel", "error", "-"],
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                            startupinfo=_SI, creationflags=_CF
+                            startupinfo=_SI
                         )
                         flac_proc = subprocess.Popen(
                             [flac, "-6", "-f", "--sample-rate=" + sample_rate,
@@ -2527,7 +2527,7 @@ class ConvertPage(AppPage):
                              "--sign=signed", "--endian=little",
                              "-o", out, "-"],
                             stdin=ffmpeg_proc.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            startupinfo=_SI, creationflags=_CF
+                            startupinfo=_SI
                         )
                         ffmpeg_proc.stdout.close()
                         _, result_stderr = flac_proc.communicate()
