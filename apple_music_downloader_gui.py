@@ -2396,16 +2396,11 @@ class ConvertPage(AppPage):
         self._log.configure(state="disabled")
 
         ffmpeg = shutil.which("ffmpeg")
-        ffprobe = shutil.which("ffprobe")
-        if not ffmpeg or not ffprobe:
+        if not ffmpeg:
             self.log("[WARN] ffmpeg/ffprobe not found, attempting winget install...")
             self._converting = True
             self._convert_btn.configure(state="disabled", text="...")
             threading.Thread(target=self._try_install_ffmpeg, daemon=True).start()
-            return
-
-        if not os.path.isfile(FLAC_EXE):
-            self.log("[ERROR] flac.exe not found at assets/flac.exe")
             return
 
         self._converting = True
@@ -2457,8 +2452,6 @@ class ConvertPage(AppPage):
         ok_count = 0
         fmt = self._format_var.get().lower()
         ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
-        ffprobe = shutil.which("ffprobe") or "ffprobe"
-        flac = FLAC_EXE
 
         for i, src in enumerate(files):
             base = os.path.splitext(src)[0]
@@ -2481,86 +2474,18 @@ class ConvertPage(AppPage):
                         capture_output=True, text=True,
                         startupinfo=_SI, creationflags=_CF
                     )
-                    if result.returncode == 0:
-                        ok_count += 1
-                    else:
-                        self.after(0, lambda n=name: self.log(self.t("convert_failed", file=n)))
-                        if result.stderr.strip():
-                            self.after(0, lambda e=result.stderr.strip()[:200]: self.log(f"  [ERROR] {e}"))
-                    continue
-
-                # === FLAC: foobar2000-style PCM pipe + metadata via --tag ===
-                sample_rate = "44100"
-                channels = "2"
-                bps = "16"
-                tags = []
-
-                # Probe audio params + metadata
-                try:
-                    p = subprocess.run(
-                        [ffprobe, "-v", "error", "-select_streams", "a:0",
-                         "-show_entries", "stream=sample_rate,channels,bits_per_raw_sample",
-                         "-of", "csv=p=0", src],
+                else:
+                    result = subprocess.run(
+                        [ffmpeg, "-y", "-i", src, "-c:a", "flac", "-compression_level", "6", "-loglevel", "error", out],
                         capture_output=True, text=True,
                         startupinfo=_SI, creationflags=_CF
                     )
-                    if p.returncode == 0 and p.stdout.strip():
-                        parts = p.stdout.strip().split(",")
-                        if len(parts) > 0 and parts[0] != "N/A":
-                            sample_rate = parts[0]
-                        if len(parts) > 1 and parts[1] != "N/A":
-                            channels = parts[1]
-                        if len(parts) > 2 and parts[2] != "N/A":
-                            bps = parts[2]
-
-                    m = subprocess.run(
-                        [ffprobe, "-v", "error", "-show_entries", "format_tags",
-                         "-of", "default=noprint_wrappers=1", src],
-                        capture_output=True, text=True,
-                        startupinfo=_SI, creationflags=_CF
-                    )
-                    if m.returncode == 0 and m.stdout.strip():
-                        for line in m.stdout.strip().split('\n'):
-                            if line.startswith("TAG:"):
-                                tags.append(line[4:])  # remove "TAG:" prefix
-                except Exception:
-                    pass
-
-                pcm_fmt = "s" + bps + "le"
-                flac_args = [flac, "-6", "-f",
-                             "--sample-rate=" + sample_rate,
-                             "--channels=" + channels,
-                             "--bps=" + bps,
-                             "--sign=signed", "--endian=little"]
-                for tag in tags:
-                    flac_args.append("--tag=" + tag)
-                flac_args.extend(["-o", out, "-"])
-
-                ffmpeg_proc = subprocess.Popen(
-                    [ffmpeg, "-i", src, "-f", pcm_fmt, "-acodec", "pcm_s" + bps + "le", "-loglevel", "error", "-"],
-                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                    startupinfo=_SI
-                )
-                flac_proc = subprocess.Popen(
-                    flac_args,
-                    stdin=ffmpeg_proc.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                    startupinfo=_SI
-                )
-                ffmpeg_proc.stdout.close()
-                flac_proc.wait()
-                ffmpeg_proc.wait()
-                if flac_proc.returncode == 0:
+                if result.returncode == 0:
                     ok_count += 1
-                    try:
-                        stderr_bytes = flac_proc.stderr.read()
-                        stderr_text = stderr_bytes.decode(errors="replace").strip()
-                        if stderr_text:
-                            for line in stderr_text.split('\n'):
-                                s = line.strip()
-                                if s and ("wrote" in s or "ratio" in s):
-                                    self.after(0, lambda l=s: self.log("  " + l))
-                    except Exception:
-                        pass
+                else:
+                    self.after(0, lambda n=name: self.log(self.t("convert_failed", file=n)))
+                    if result.stderr.strip():
+                        self.after(0, lambda e=result.stderr.strip()[:200]: self.log(f"  [ERROR] {e}"))
             except FileNotFoundError as fe:
                 self.after(0, lambda: self.log(f"[ERROR] {fe.filename} not found"))
                 self.after(0, lambda: self.log("[INFO] Install ffmpeg or place flac.exe in assets/"))
