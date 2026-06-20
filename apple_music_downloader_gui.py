@@ -1484,12 +1484,19 @@ class MainPage(AppPage):
                            font=ctk.CTkFont(family=f, size=12, weight="bold"),
                            text_color=c["text"]); lbl.pack(side="left"); self._reg(lbl, "output")
         clear_footer_btn = ctk.CTkButton(footer, text=self.t("clear"), width=48, height=22,
-                                         fg_color=c["card"], hover_color=c["divider"],
-                                         text_color=c["text_secondary"], corner_radius=4,
-                                         font=ctk.CTkFont(family=f, size=10),
-                                         command=self._clear_console)
+                                          fg_color=c["card"], hover_color=c["divider"],
+                                          text_color=c["text_secondary"], corner_radius=4,
+                                          font=ctk.CTkFont(family=f, size=10),
+                                          command=self._clear_console)
         clear_footer_btn.pack(side="right")
         self._reg(clear_footer_btn, "clear")
+
+        self._scroll_btn = ctk.CTkButton(footer, text="▼", width=28, height=22,
+                                          fg_color=c["card"], hover_color=c["divider"],
+                                          text_color=c["text_secondary"], corner_radius=4,
+                                          font=ctk.CTkFont(family=f, size=10),
+                                          command=self._toggle_scroll)
+        self._scroll_btn.pack(side="right", padx=(0, 4))
 
         self.status_bar = ctk.CTkFrame(self, fg_color=c["card"], height=26, corner_radius=0,
                                        border_color=c["divider"], border_width=1)
@@ -1539,6 +1546,12 @@ class MainPage(AppPage):
         self.console.delete("1.0", "end")
         self.console.configure(state="disabled")
         self._last_progress = False
+
+    def _toggle_scroll(self):
+        if self.console.yview()[1] >= 1.0:
+            self.console.see("1.0")
+        else:
+            self.console.see("end")
 
     def log(self, msg):
         self._log_queue.put(("log", msg))
