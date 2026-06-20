@@ -2543,25 +2543,24 @@ class ConvertPage(AppPage):
                 )
                 flac_proc = subprocess.Popen(
                     flac_args,
-                    stdin=ffmpeg_proc.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    stdin=ffmpeg_proc.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                     startupinfo=_SI
                 )
                 ffmpeg_proc.stdout.close()
-                _, result_stderr = flac_proc.communicate()
+                flac_proc.wait()
                 ffmpeg_proc.wait()
                 if flac_proc.returncode == 0:
                     ok_count += 1
-                    stderr_text = result_stderr.decode(errors="replace").strip() if result_stderr else ""
-                    if stderr_text:
-                        for line in stderr_text.split('\n'):
-                            s = line.strip()
-                            if s and ("wrote" in s or "ratio" in s):
-                                self.after(0, lambda l=s: self.log("  " + l))
-                else:
-                    self.after(0, lambda n=name: self.log(self.t("convert_failed", file=n)))
-                    stderr_text = result_stderr.decode(errors="replace").strip()[:200] if result_stderr else ""
-                    if stderr_text:
-                        self.after(0, lambda e=stderr_text: self.log(f"  [ERROR] {e}"))
+                    try:
+                        stderr_bytes = flac_proc.stderr.read()
+                        stderr_text = stderr_bytes.decode(errors="replace").strip()
+                        if stderr_text:
+                            for line in stderr_text.split('\n'):
+                                s = line.strip()
+                                if s and ("wrote" in s or "ratio" in s):
+                                    self.after(0, lambda l=s: self.log("  " + l))
+                    except Exception:
+                        pass
             except FileNotFoundError as fe:
                 self.after(0, lambda: self.log(f"[ERROR] {fe.filename} not found"))
                 self.after(0, lambda: self.log("[INFO] Install ffmpeg or place flac.exe in assets/"))
