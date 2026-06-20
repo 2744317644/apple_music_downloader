@@ -1548,10 +1548,22 @@ class MainPage(AppPage):
         self._last_progress = False
 
     def _toggle_scroll(self):
-        if self.console.yview()[1] >= 1.0:
+        if self.console.yview()[1] >= 0.99:
             self.console.see("1.0")
+            self._scroll_btn.configure(text="▼")
         else:
             self.console.see("end")
+            self._scroll_btn.configure(text="▲")
+        self._update_scroll_icon()
+
+    def _update_scroll_icon(self):
+        try:
+            if self.console.yview()[1] >= 0.99:
+                self._scroll_btn.configure(text="▲")
+            else:
+                self._scroll_btn.configure(text="▼")
+        except Exception:
+            pass
 
     def log(self, msg):
         self._log_queue.put(("log", msg))
@@ -1610,6 +1622,7 @@ class MainPage(AppPage):
             self.console.configure(state="disabled")
             if at_bottom:
                 self.console.see("end")
+            self._update_scroll_icon()
         self._flush_timer = self.after(100, self._flush_log)
 
     def on_show(self):
