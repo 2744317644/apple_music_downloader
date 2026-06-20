@@ -221,6 +221,7 @@ I18N = {
         "export_done": "导出完成",
         "export_failed": "导出失败",
         "wrapper_restart": "重启 Wrapper",
+        "wrapper_restarting": "重启中...",
         "tab_convert": "转换",
         "convert_title": "FLAC 转换",
         "convert_btn": "开始转换",
@@ -306,6 +307,7 @@ I18N = {
         "export_done": "Export Done",
         "export_failed": "Export Failed",
         "wrapper_restart": "Restart Wrapper",
+        "wrapper_restarting": "Restarting...",
         "tab_convert": "Convert",
         "convert_title": "FLAC Convert",
         "convert_btn": "Start Convert",
@@ -2174,7 +2176,7 @@ class StatusPage(AppPage):
         self.after(0, update)
 
     def _restart_wrapper(self):
-        self._restart_btn.configure(state="disabled", text="...")
+        self._restart_btn.configure(state="disabled", text=self.t("wrapper_restarting"))
         stop_wrapper()
         threading.Thread(target=self._do_restart_wrapper, daemon=True).start()
 
