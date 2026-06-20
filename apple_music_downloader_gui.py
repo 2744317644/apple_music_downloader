@@ -220,6 +220,7 @@ I18N = {
         "export_images": "导出镜像",
         "export_done": "导出完成",
         "export_failed": "导出失败",
+        "wrapper_restart": "重启 Wrapper",
         "tab_convert": "转换",
         "convert_title": "FLAC 转换",
         "convert_btn": "开始转换",
@@ -304,6 +305,7 @@ I18N = {
         "export_images": "Export Images",
         "export_done": "Export Done",
         "export_failed": "Export Failed",
+        "wrapper_restart": "Restart Wrapper",
         "tab_convert": "Convert",
         "convert_title": "FLAC Convert",
         "convert_btn": "Start Convert",
@@ -2046,6 +2048,19 @@ class StatusPage(AppPage):
 
                 self._items[key] = (dot, value)
 
+            if section_key == "s_wrapper":
+                restart_row = ctk.CTkFrame(card, fg_color="transparent", height=32)
+                restart_row.pack(fill="x", padx=10, pady=3)
+                restart_row.pack_propagate(False)
+                self._restart_btn = ctk.CTkButton(restart_row, text=self.t("wrapper_restart"),
+                                                  fg_color=c["warning"], hover_color="#E68600",
+                                                  text_color="white",
+                                                  font=ctk.CTkFont(family=f, size=12),
+                                                  corner_radius=6, height=26,
+                                                  command=self._restart_wrapper)
+                self._restart_btn.pack(side="left")
+                self._reg(self._restart_btn, "wrapper_restart")
+
             # Add export button inside the images card
             if section_key == "s_images":
                 export_row = ctk.CTkFrame(card, fg_color="transparent", height=32)
@@ -2148,6 +2163,18 @@ class StatusPage(AppPage):
                 if key in path_map:
                     lbl.configure(text=path_map[key])
         self.after(0, update)
+
+    def _restart_wrapper(self):
+        self._restart_btn.configure(state="disabled", text="...")
+        stop_wrapper()
+        threading.Thread(target=self._do_restart_wrapper, daemon=True).start()
+
+    def _do_restart_wrapper(self):
+        ok, msg = do_start_wrapper()
+        self.after(0, lambda: self._restart_btn.configure(
+            state="normal", text=self.t("wrapper_restart")
+        ))
+        self.after(0, self._refresh)
 
     def _export_images(self):
         from tkinter import filedialog
