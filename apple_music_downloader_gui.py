@@ -2429,7 +2429,6 @@ class ConvertPage(AppPage):
         self.after(0, self._reset_btn)
 
     def _do_convert(self):
-        flac = FLAC_EXE
         self.after(0, lambda: self.log(self.t("convert_scanning")))
 
         # Recursive scan for m4a files only
@@ -2454,14 +2453,12 @@ class ConvertPage(AppPage):
         ok_count = 0
         fmt = self._format_var.get().lower()
         ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
-        ffprobe = shutil.which("ffprobe") or "ffprobe"
 
         for i, src in enumerate(files):
             base = os.path.splitext(src)[0]
             base = base.replace(". ", ".", 1)
             out = base + "." + fmt
             name = os.path.basename(src)
-            ext = os.path.splitext(src)[1].lower()
 
             # Skip if output file already exists
             if os.path.isfile(out):
@@ -2472,80 +2469,24 @@ class ConvertPage(AppPage):
             self.after(0, lambda v=(i+1)/total: self._progress.set(v))
 
             try:
-                if ext == ".m4a":
-                    if fmt == "wav":
-                        result = subprocess.run(
-                            [ffmpeg, "-y", "-i", src, "-loglevel", "error", out],
-                            capture_output=True, text=True,
-                            startupinfo=_SI, creationflags=_CF
-                        )
-                        if result.returncode == 0:
-                            ok_count += 1
-                            if result.stderr.strip():
-                                for line in result.stderr.strip().split('\n'):
-                                    s = line.strip()
-                                    if s and ("wrote" in s or "ratio" in s):
-                                        self.after(0, lambda l=s: self.log("  " + l))
-                        else:
-                            self.after(0, lambda n=name: self.log(self.t("convert_failed", file=n)))
-                            if result.stderr.strip():
-                                self.after(0, lambda e=result.stderr.strip()[:200]: self.log(f"  [ERROR] {e}"))
-                        continue
-                    else:
-                        # Probe audio params for raw PCM pipe
-                        sample_rate = "44100"
-                        channels = "2"
-                        bps = "16"
-                        try:
-                            p = subprocess.run(
-                                [ffprobe, "-v", "error", "-select_streams", "a:0",
-                                 "-show_entries", "stream=sample_rate,channels,bits_per_raw_sample",
-                                 "-of", "csv=p=0", src],
-                                capture_output=True, text=True,
-                                startupinfo=_SI, creationflags=_CF
-                            )
-                            if p.returncode == 0 and p.stdout.strip():
-                                parts = p.stdout.strip().split(",")
-                                if len(parts) > 0 and parts[0] != "N/A":
-                                    sample_rate = parts[0]
-                                if len(parts) > 1 and parts[1] != "N/A":
-                                    channels = parts[1]
-                                if len(parts) > 2 and parts[2] != "N/A":
-                                    bps = parts[2]
-                        except Exception:
-                            pass
-
-                        pcm_fmt = "s" + bps + "le"
-                        ffmpeg_proc = subprocess.Popen(
-                            [ffmpeg, "-i", src, "-f", pcm_fmt, "-acodec", "pcm_s" + bps + "le", "-loglevel", "error", "-"],
-                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                            startupinfo=_SI
-                        )
-                        flac_proc = subprocess.Popen(
-                            [flac, "-6", "-f", "--sample-rate=" + sample_rate,
-                             "--channels=" + channels, "--bps=" + bps,
-                             "--sign=signed", "--endian=little",
-                             "-o", out, "-"],
-                            stdin=ffmpeg_proc.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            startupinfo=_SI
-                        )
-                        ffmpeg_proc.stdout.close()
-                        _, result_stderr = flac_proc.communicate()
-                        ffmpeg_proc.wait()
-                        if flac_proc.returncode == 0:
-                            ok_count += 1
-                            stderr_text = result_stderr.decode(errors="replace").strip() if result_stderr else ""
-                            if stderr_text:
-                                for line in stderr_text.split('\n'):
-                                    s = line.strip()
-                                    if s and ("wrote" in s or "ratio" in s):
-                                        self.after(0, lambda l=s: self.log("  " + l))
-                        else:
-                            self.after(0, lambda n=name: self.log(self.t("convert_failed", file=n)))
-                            stderr_text = result_stderr.decode(errors="replace").strip()[:200] if result_stderr else ""
-                            if stderr_text:
-                                self.after(0, lambda e=stderr_text: self.log(f"  [ERROR] {e}"))
-                        continue
+                if fmt == "wav":
+                    result = subprocess.run(
+                        [ffmpeg, "-y", "-i", src, "-loglevel", "error", out],
+                        capture_output=True, text=True,
+                        startupinfo=_SI, creationflags=_CF
+                    )
+                else:
+                    result = subprocess.run(
+                        [ffmpeg, "-y", "-i", src, "-c:a", "flac", "-compression_level", "6", "-loglevel", "error", out],
+                        capture_output=True, text=True,
+                        startupinfo=_SI, creationflags=_CF
+                    )
+                if result.returncode == 0:
+                    ok_count += 1
+                else:
+                    self.after(0, lambda n=name: self.log(self.t("convert_failed", file=n)))
+                    if result.stderr.strip():
+                        self.after(0, lambda e=result.stderr.strip()[:200]: self.log(f"  [ERROR] {e}"))
             except FileNotFoundError as fe:
                 self.after(0, lambda: self.log(f"[ERROR] {fe.filename} not found"))
                 self.after(0, lambda: self.log("[INFO] Install ffmpeg or place flac.exe in assets/"))
