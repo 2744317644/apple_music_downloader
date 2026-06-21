@@ -2600,7 +2600,7 @@ class RenamePage(AppPage):
                                            font=ctk.CTkFont(family=f, size=12),
                                            width=160)
         self._format_entry.pack(side="left", padx=(0, 6))
-        self._format_entry.insert(0, "player - playlist")
+        self._format_entry.insert(0, "player - music_name")
 
         self._rename_btn = ctk.CTkButton(btn_frame, text=self.t("rename_btn"),
                                           width=90, height=30, corner_radius=6,
@@ -2690,7 +2690,7 @@ class RenamePage(AppPage):
         total = len(files)
         ok_count = 0
 
-        TAG_MAP = {"player": "ARTIST", "playlist": "ALBUM"}
+        TAG_MAP = {"player": "ARTIST", "music_name": "TITLE"}
 
         for i, src in enumerate(files):
             name = os.path.basename(src)
@@ -2702,7 +2702,7 @@ class RenamePage(AppPage):
             try:
                 p = subprocess.run(
                     [ffprobe, "-v", "error",
-                     "-show_entries", "format_tags=ARTIST,ALBUM",
+                     "-show_entries", "format_tags=ARTIST,TITLE",
                      "-of", "default=noprint_wrappers=1:nokey=1", src],
                     capture_output=True, text=True,
                     startupinfo=_SI, creationflags=_CF
@@ -2711,18 +2711,18 @@ class RenamePage(AppPage):
                     lines = p.stdout.strip().split('\n')
                     if len(lines) >= 2:
                         tags["ARTIST"] = lines[0].strip()
-                        tags["ALBUM"] = lines[1].strip()
+                        tags["TITLE"] = lines[1].strip()
             except Exception:
                 pass
 
             artist = tags.get("ARTIST", "")
-            album = tags.get("ALBUM", "")
-            if not artist or not album:
+            title = tags.get("TITLE", "")
+            if not artist or not title:
                 self.after(0, lambda n=name: self.log(self.t("rename_no_tag", file=n)))
                 continue
 
             # Build new filename
-            new_base = fmt_str.replace("player", artist).replace("playlist", album)
+            new_base = fmt_str.replace("player", artist).replace("music_name", title)
             new_name = new_base + ext
             new_path = os.path.join(os.path.dirname(src), new_name)
 
