@@ -235,7 +235,7 @@ I18N = {
         "convert_nothing": "未找到可转换的文件",
         "convert_complete": "转换完毕，共处理 {total} 个文件",
         "convert_skip_exists": "已存在，跳过: {file}",
-        "convert_converting": "转换中...",
+        "convert_running": "转换中...",
         "tab_rename": "重命名",
         "rename_title": "音频重命名",
         "rename_btn": "执行重命名",
@@ -336,7 +336,7 @@ I18N = {
         "convert_nothing": "No convertible files found",
         "convert_complete": "Conversion complete, total {total} files",
         "convert_skip_exists": "Already exists, skip: {file}",
-        "convert_converting": "Converting...",
+        "convert_running": "Converting...",
         "tab_rename": "Rename",
         "rename_title": "Rename Audio",
         "rename_btn": "Rename",
@@ -2447,12 +2447,12 @@ class ConvertPage(AppPage):
         if not ffmpeg:
             self.log("[WARN] ffmpeg/ffprobe not found, attempting winget install...")
             self._converting = True
-            self._convert_btn.configure(state="disabled", text=self.t("convert_converting"))
+            self._convert_btn.configure(state="disabled", text=self.t("convert_running"))
             threading.Thread(target=self._try_install_ffmpeg, daemon=True).start()
             return
 
         self._converting = True
-        self._convert_btn.configure(state="disabled", text=self.t("convert_converting"))
+        self._convert_btn.configure(state="disabled", text=self.t("convert_running"))
         threading.Thread(target=self._do_convert, daemon=True).start()
 
     def _try_install_ffmpeg(self):
@@ -2661,7 +2661,7 @@ class RenamePage(AppPage):
         self._log.delete("1.0", "end")
         self._log.configure(state="disabled")
         self._renaming = True
-        self._rename_btn.configure(state="disabled", text=self.t("convert_converting"))
+        self._rename_btn.configure(state="disabled", text=self.t("convert_running"))
         threading.Thread(target=self._do_rename, daemon=True).start()
 
     def _do_rename(self):
