@@ -236,6 +236,20 @@ I18N = {
         "convert_complete": "转换完毕，共处理 {total} 个文件",
         "convert_skip_exists": "已存在，跳过: {file}",
         "convert_converting": "转换中...",
+        "tab_rename": "重命名",
+        "rename_title": "音频重命名",
+        "rename_btn": "执行重命名",
+        "rename_select_dir": "选择目录",
+        "rename_format_label": "格式:",
+        "rename_source_dir": "源目录: {path}",
+        "rename_scanning": "正在扫描文件...",
+        "rename_found": "找到 {count} 个可重命名文件",
+        "rename_nothing": "未找到 .flac / .wav 文件",
+        "rename_renaming": "重命名: {old} -> {new}",
+        "rename_done": "重命名完成: {count} 个文件",
+        "rename_failed": "失败: {file}",
+        "rename_complete": "重命名完毕，共处理 {total} 个文件",
+        "rename_no_tag": "跳过(缺少标签): {file}",
     },
     "en": {
         "app_title": "Apple Music Downloader",
@@ -323,6 +337,20 @@ I18N = {
         "convert_complete": "Conversion complete, total {total} files",
         "convert_skip_exists": "Already exists, skip: {file}",
         "convert_converting": "Converting...",
+        "tab_rename": "Rename",
+        "rename_title": "Rename Audio",
+        "rename_btn": "Rename",
+        "rename_select_dir": "Select Dir",
+        "rename_format_label": "Format:",
+        "rename_source_dir": "Source: {path}",
+        "rename_scanning": "Scanning files...",
+        "rename_found": "Found {count} renamable files",
+        "rename_nothing": "No .flac / .wav files found",
+        "rename_renaming": "Rename: {old} -> {new}",
+        "rename_done": "Renamed: {count} files",
+        "rename_failed": "Failed: {file}",
+        "rename_complete": "Rename complete, total {total} files",
+        "rename_no_tag": "Skip (missing tag): {file}",
     },
 }
 
@@ -1292,7 +1320,7 @@ class TabbedContainer(AppPage):
         self.tab_btns = {}
         sep = ctk.CTkFrame(self.sidebar, height=12, fg_color="transparent")
         sep.pack(fill="x")
-        self._tab_keys = [("download", "tab_download"), ("status", "tab_status"), ("config", "tab_config"), ("convert", "tab_convert")]
+        self._tab_keys = [("download", "tab_download"), ("status", "tab_status"), ("config", "tab_config"), ("convert", "tab_convert"), ("rename", "tab_rename")]
         for key, i18n_key in self._tab_keys:
             btn = ctk.CTkButton(self.sidebar, text=self.t(i18n_key), anchor="w",
                                 fg_color="transparent", hover_color=c["input_bg"],
@@ -1335,6 +1363,10 @@ class TabbedContainer(AppPage):
         self.convert_page = ConvertPage(self.content, app)
         self.pages["convert"] = self.convert_page
         self.convert_page.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        self.rename_page = RenamePage(self.content, app)
+        self.pages["rename"] = self.rename_page
+        self.rename_page.place(relx=0, rely=0, relwidth=1, relheight=1)
 
         self.show_tab("download")
 
@@ -2516,6 +2548,202 @@ class ConvertPage(AppPage):
     def _reset_btn(self):
         self._converting = False
         self._convert_btn.configure(state="normal", text=self.t("convert_btn"))
+
+    def refresh_language(self):
+        super().refresh_language()
+        self._update_dir_label()
+
+
+class RenamePage(AppPage):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self._source_dir = get_download_folder()
+        self._renaming = False
+        self.build_ui()
+
+    def build_ui(self):
+        c = self.app.colors
+        f = FONT_FAMILY
+
+        topbar = ctk.CTkFrame(self, fg_color=c["card"], height=44, corner_radius=0,
+                              border_color=c["divider"], border_width=1)
+        topbar.pack(fill="x")
+        topbar.pack_propagate(False)
+
+        self._title = ctk.CTkLabel(topbar, text=self.t("rename_title"),
+                                   font=ctk.CTkFont(family=f, size=16, weight="bold"),
+                                   text_color=c["text"])
+        self._title.pack(side="left", padx=16, pady=11)
+        self._reg(self._title, "rename_title")
+
+        btn_frame = ctk.CTkFrame(topbar, fg_color="transparent")
+        btn_frame.pack(side="right", padx=6)
+
+        self._select_dir_btn = ctk.CTkButton(btn_frame, text=self.t("rename_select_dir"),
+                                              width=80, height=30, corner_radius=6,
+                                              fg_color=c["input_bg"], hover_color=c["divider"],
+                                              text_color=c["text"],
+                                              font=ctk.CTkFont(family=f, size=12),
+                                              command=self._select_dir)
+        self._select_dir_btn.pack(side="left", padx=(0, 6))
+        self._reg(self._select_dir_btn, "rename_select_dir")
+
+        lbl = ctk.CTkLabel(btn_frame, text=self.t("rename_format_label"),
+                           font=ctk.CTkFont(family=f, size=12),
+                           text_color=c["text_secondary"])
+        lbl.pack(side="left", padx=(0, 4))
+        self._reg(lbl, "rename_format_label")
+
+        self._format_entry = ctk.CTkEntry(btn_frame, height=30, corner_radius=6,
+                                           fg_color=c["input_bg"], text_color=c["text"],
+                                           border_color=c["border"],
+                                           font=ctk.CTkFont(family=f, size=12),
+                                           width=160)
+        self._format_entry.pack(side="left", padx=(0, 6))
+        self._format_entry.insert(0, "player - playlist")
+
+        self._rename_btn = ctk.CTkButton(btn_frame, text=self.t("rename_btn"),
+                                          width=90, height=30, corner_radius=6,
+                                          fg_color=c["primary"], hover_color=c["primary_hover"],
+                                          text_color="white",
+                                          font=ctk.CTkFont(family=f, size=12, weight="bold"),
+                                          command=self._start_rename)
+        self._rename_btn.pack(side="left")
+        self._reg(self._rename_btn, "rename_btn")
+
+        body = ctk.CTkFrame(self, fg_color=c["background"], corner_radius=0)
+        body.pack(fill="both", expand=True, padx=12, pady=8)
+
+        self._status_label = ctk.CTkLabel(body, text=self.t("rename_source_dir", path=self._source_dir),
+                                          font=ctk.CTkFont(family=f, size=12),
+                                          text_color=c["text_secondary"])
+        self._status_label.pack(anchor="w", pady=(0, 4))
+
+        self._progress = ctk.CTkProgressBar(body, width=400, height=4,
+                                            progress_color=c["primary"],
+                                            fg_color=c["divider"])
+        self._progress.pack(fill="x", pady=(0, 8))
+        self._progress.set(0)
+
+        self._log = ctk.CTkTextbox(body,
+                                    fg_color=c["card"], text_color=c["text"],
+                                    border_color=c["border"], border_width=1,
+                                    corner_radius=10,
+                                    font=ctk.CTkFont(family=MONO_FAMILY, size=12),
+                                    state="disabled",
+                                    wrap="none")
+        self._log.pack(fill="both", expand=True)
+
+    def log(self, msg):
+        if self._log:
+            self._log.configure(state="normal")
+            self._log.insert("end", msg + "\n")
+            self._log.see("end")
+            self._log.configure(state="disabled")
+
+    def on_show(self):
+        self._update_dir_label()
+
+    def _update_dir_label(self):
+        self._status_label.configure(text=self.t("rename_source_dir", path=self._source_dir))
+
+    def _select_dir(self):
+        from tkinter import filedialog
+        d = filedialog.askdirectory(title=self.t("rename_select_dir"), initialdir=self._source_dir)
+        if d:
+            self._source_dir = d
+            self._update_dir_label()
+
+    def _start_rename(self):
+        if self._renaming:
+            return
+        self._log.configure(state="normal")
+        self._log.delete("1.0", "end")
+        self._log.configure(state="disabled")
+        self._renaming = True
+        self._rename_btn.configure(state="disabled", text=self.t("convert_converting"))
+        threading.Thread(target=self._do_rename, daemon=True).start()
+
+    def _do_rename(self):
+        ffprobe = shutil.which("ffprobe") or "ffprobe"
+        fmt_str = self._format_entry.get().strip()
+        self.after(0, lambda: self.log(self.t("rename_scanning")))
+
+        files = []
+        try:
+            for root, dirs, filenames in os.walk(self._source_dir):
+                for f in sorted(filenames):
+                    ext = os.path.splitext(f)[1].lower()
+                    if ext in ('.flac', '.wav'):
+                        files.append(os.path.join(root, f))
+        except Exception as e:
+            self.after(0, lambda: self.log(f"[ERROR] {e}"))
+            self.after(0, self._reset_btn)
+            return
+
+        if not files:
+            self.after(0, lambda: self.log(self.t("rename_nothing")))
+            self.after(0, self._reset_btn)
+            return
+
+        self.after(0, lambda: self.log(self.t("rename_found", count=len(files))))
+        total = len(files)
+        ok_count = 0
+
+        TAG_MAP = {"player": "ARTIST", "playlist": "ALBUM"}
+
+        for i, src in enumerate(files):
+            name = os.path.basename(src)
+            ext = os.path.splitext(src)[1]
+            self.after(0, lambda v=(i+1)/total: self._progress.set(v))
+
+            # Extract tags
+            tags = {}
+            try:
+                p = subprocess.run(
+                    [ffprobe, "-v", "error",
+                     "-show_entries", "format_tags=ARTIST,ALBUM",
+                     "-of", "default=noprint_wrappers=1:nokey=1", src],
+                    capture_output=True, text=True,
+                    startupinfo=_SI, creationflags=_CF
+                )
+                if p.returncode == 0 and p.stdout.strip():
+                    lines = p.stdout.strip().split('\n')
+                    if len(lines) >= 2:
+                        tags["ARTIST"] = lines[0].strip()
+                        tags["ALBUM"] = lines[1].strip()
+            except Exception:
+                pass
+
+            artist = tags.get("ARTIST", "")
+            album = tags.get("ALBUM", "")
+            if not artist or not album:
+                self.after(0, lambda n=name: self.log(self.t("rename_no_tag", file=n)))
+                continue
+
+            # Build new filename
+            new_base = fmt_str.replace("player", artist).replace("playlist", album)
+            new_name = new_base + ext
+            new_path = os.path.join(os.path.dirname(src), new_name)
+
+            if os.path.normpath(src) == os.path.normpath(new_path):
+                continue
+
+            self.after(0, lambda o=name, n=new_name: self.log(self.t("rename_renaming", old=o, new=n)))
+
+            try:
+                os.rename(src, new_path)
+                ok_count += 1
+            except Exception as e:
+                self.after(0, lambda n=name, err=str(e): self.log(self.t("rename_failed", file=n) + f": {err}"))
+
+        self.after(0, lambda: self._progress.set(1.0))
+        self.after(0, lambda: self.log(self.t("rename_complete", total=ok_count)))
+        self.after(0, self._reset_btn)
+
+    def _reset_btn(self):
+        self._renaming = False
+        self._rename_btn.configure(state="normal", text=self.t("rename_btn"))
 
     def refresh_language(self):
         super().refresh_language()
