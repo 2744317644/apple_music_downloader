@@ -235,6 +235,7 @@ I18N = {
         "convert_nothing": "未找到可转换的文件",
         "convert_complete": "转换完毕，共处理 {total} 个文件",
         "convert_skip_exists": "已存在，跳过: {file}",
+        "convert_converting": "转换中...",
     },
     "en": {
         "app_title": "Apple Music Downloader",
@@ -321,6 +322,7 @@ I18N = {
         "convert_nothing": "No convertible files found",
         "convert_complete": "Conversion complete, total {total} files",
         "convert_skip_exists": "Already exists, skip: {file}",
+        "convert_converting": "Converting...",
     },
 }
 
@@ -2413,12 +2415,12 @@ class ConvertPage(AppPage):
         if not ffmpeg:
             self.log("[WARN] ffmpeg/ffprobe not found, attempting winget install...")
             self._converting = True
-            self._convert_btn.configure(state="disabled", text="...")
+            self._convert_btn.configure(state="disabled", text=self.t("convert_converting"))
             threading.Thread(target=self._try_install_ffmpeg, daemon=True).start()
             return
 
         self._converting = True
-        self._convert_btn.configure(state="disabled", text="...")
+        self._convert_btn.configure(state="disabled", text=self.t("convert_converting"))
         threading.Thread(target=self._do_convert, daemon=True).start()
 
     def _try_install_ffmpeg(self):
