@@ -2506,13 +2506,14 @@ class ConvertPage(AppPage):
             base = base.replace(". ", ".", 1)
             out = base + "." + fmt
             name = os.path.basename(src)
+            name_noext = os.path.splitext(name)[0]
 
             # Skip if output file already exists
             if os.path.isfile(out):
-                self.after(0, lambda n=name: self.log(self.t("convert_skip_exists", file=n)))
+                self.after(0, lambda n=name_noext: self.log(self.t("convert_skip_exists", file=n)))
                 continue
 
-            self.after(0, lambda n=name: self.log(self.t("convert_converting", file=n)))
+            self.after(0, lambda n=name_noext: self.log(self.t("convert_converting", file=n)))
             self.after(0, lambda v=(i+1)/total: self._progress.set(v))
 
             try:
@@ -2531,7 +2532,7 @@ class ConvertPage(AppPage):
                 if result.returncode == 0:
                     ok_count += 1
                 else:
-                    self.after(0, lambda n=name: self.log(self.t("convert_failed", file=n)))
+                    self.after(0, lambda n=name_noext: self.log(self.t("convert_failed", file=n)))
                     if result.stderr.strip():
                         self.after(0, lambda e=result.stderr.strip()[:200]: self.log(f"  [ERROR] {e}"))
             except FileNotFoundError as fe:
@@ -2539,7 +2540,7 @@ class ConvertPage(AppPage):
                 self.after(0, lambda: self.log("[INFO] Install ffmpeg or place flac.exe in assets/"))
                 break
             except Exception as e:
-                self.after(0, lambda n=name, err=str(e): self.log(f"[ERROR] {n}: {err}"))
+                self.after(0, lambda n=name_noext, err=str(e): self.log(f"[ERROR] {n}: {err}"))
 
         self.after(0, lambda: self._progress.set(1.0))
         self.after(0, lambda: self.log(self.t("convert_complete", total=ok_count)))
