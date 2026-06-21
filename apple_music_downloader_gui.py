@@ -2710,10 +2710,11 @@ class RenamePage(AppPage):
                 )
                 if p.returncode == 0 and p.stdout.strip():
                     for line in p.stdout.strip().split('\n'):
-                        if line.startswith("TAG:ARTIST="):
-                            tags["ARTIST"] = line[11:].strip()
-                        elif line.startswith("TAG:TITLE="):
-                            tags["TITLE"] = line[10:].strip()
+                        upper = line.upper()
+                        if upper.startswith("TAG:ARTIST="):
+                            tags["ARTIST"] = line.split("=", 1)[1].strip()
+                        elif upper.startswith("TAG:TITLE="):
+                            tags["TITLE"] = line.split("=", 1)[1].strip()
             except Exception:
                 pass
 
