@@ -2703,15 +2703,16 @@ class RenamePage(AppPage):
                 p = subprocess.run(
                     [ffprobe, "-v", "error",
                      "-show_entries", "format_tags=ARTIST,TITLE",
-                     "-of", "default=noprint_wrappers=1:nokey=1", src],
+                     "-of", "default=noprint_wrappers=1", src],
                     capture_output=True, text=True,
                     startupinfo=_SI, creationflags=_CF
                 )
                 if p.returncode == 0 and p.stdout.strip():
-                    lines = p.stdout.strip().split('\n')
-                    if len(lines) >= 2:
-                        tags["ARTIST"] = lines[0].strip()
-                        tags["TITLE"] = lines[1].strip()
+                    for line in p.stdout.strip().split('\n'):
+                        if line.startswith("TAG:ARTIST="):
+                            tags["ARTIST"] = line[11:].strip()
+                        elif line.startswith("TAG:TITLE="):
+                            tags["TITLE"] = line[10:].strip()
             except Exception:
                 pass
 
