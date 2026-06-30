@@ -2737,7 +2737,7 @@ class RenamePage(AppPage):
                     self.after(0, lambda n=name: self.log(self.t("rename_no_tag", file=n)))
                     continue
                 track_num = os.path.splitext(name)[0].split('.')[0]
-                new_base = track_num + "." + title
+                new_base = track_num + ". " + title
             else:
                 if not artist or not title:
                     self.after(0, lambda n=name: self.log(self.t("rename_no_tag", file=n)))
