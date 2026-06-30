@@ -2564,6 +2564,8 @@ class RenamePage(AppPage):
         super().__init__(parent, app)
         self._source_dir = get_download_folder()
         self._renaming = False
+        self._popup = None
+        self._reposition_timer = None
         self.build_ui()
 
     def build_ui(self):
@@ -2599,21 +2601,16 @@ class RenamePage(AppPage):
         lbl.pack(side="left", padx=(0, 4))
         self._reg(lbl, "rename_format_label")
 
-        self._format_options = [
-            self.t("rename_tpl_track"),
-            self.t("rename_tpl_artist"),
-        ]
-        self._format_var = ctk.StringVar(value=self._format_options[0])
-        self._format_menu = ctk.CTkOptionMenu(btn_frame, variable=self._format_var,
-                                               values=self._format_options,
-                                               width=160, height=30, corner_radius=6,
-                                               fg_color=c["input_bg"], button_color=c["border"],
-                                               button_hover_color=c["divider"],
-                                               dropdown_fg_color=c["card"],
-                                               dropdown_hover_color=c["divider"],
-                                               text_color=c["text"],
-                                               font=ctk.CTkFont(family=f, size=12))
-        self._format_menu.pack(side="left", padx=(0, 6))
+        self._format_var = ctk.StringVar(value=self.t("rename_tpl_track"))
+        self._format_entry = ctk.CTkEntry(btn_frame, height=30, corner_radius=6,
+                                          fg_color=c["input_bg"], text_color=c["text"],
+                                          border_color=c["border"],
+                                          font=ctk.CTkFont(family=f, size=12),
+                                          width=160, justify="center")
+        self._format_entry.pack(side="left", padx=(0, 6))
+        self._format_entry.insert(0, self.t("rename_tpl_track"))
+        self._format_entry.configure(state="readonly")
+        self._format_entry.bind("<Button-1>", lambda e: self._show_format_popup())
 
         self._rename_btn = ctk.CTkButton(btn_frame, text=self.t("rename_btn"),
                                           width=90, height=30, corner_radius=6,
@@ -2666,6 +2663,71 @@ class RenamePage(AppPage):
         if d:
             self._source_dir = d
             self._update_dir_label()
+
+    def _show_format_popup(self):
+        if self._popup and self._popup.winfo_exists():
+            self._popup.destroy()
+        self._popup = None
+        self._app_unbind(getattr(self, '_popup_bind_id', None))
+        self._popup_bind_id = None
+        if self._reposition_timer is not None:
+            self.after_cancel(self._reposition_timer)
+            self._reposition_timer = None
+
+        c = self.app.colors
+        f = FONT_FAMILY
+        popup = ctk.CTkFrame(self, fg_color=c["surface"],
+                             border_color=c["border"], border_width=1,
+                             corner_radius=6)
+        self._popup = popup
+        self._popup_bind_id = None
+
+        tpl_track = self.t("rename_tpl_track")
+        tpl_artist = self.t("rename_tpl_artist")
+
+        def select(fmt):
+            self._format_var.set(fmt)
+            self._format_entry.configure(state="normal")
+            self._format_entry.delete(0, "end")
+            self._format_entry.insert(0, fmt)
+            self._format_entry.configure(state="readonly")
+            dismiss()
+
+        def dismiss():
+            if self._reposition_timer is not None:
+                self.after_cancel(self._reposition_timer)
+                self._reposition_timer = None
+            self._app_unbind(self._popup_bind_id)
+            self._popup_bind_id = None
+            if self._popup:
+                try:
+                    self._popup.destroy()
+                except Exception:
+                    pass
+                self._popup = None
+
+        for fmt in [tpl_track, tpl_artist]:
+            btn = ctk.CTkButton(popup, text=fmt, anchor="w",
+                                fg_color="transparent", hover_color=c["input_bg"],
+                                text_color=c["text"],
+                                font=ctk.CTkFont(family=f, size=12),
+                                corner_radius=4, height=28, width=160,
+                                command=lambda f=fmt: select(f))
+            btn.pack(fill="x", pady=1, padx=2)
+
+        popup.update_idletasks()
+        popup.place(in_=self._format_entry, x=0, rely=1.0, y=2, anchor="nw")
+        popup.lift()
+        self._popup_bind_id = self._app_bind(
+            lambda e: dismiss() if not self._is_inside_popup(e.widget) else None
+        )
+
+    def _is_inside_popup(self, w):
+        while w:
+            if w == self._popup:
+                return True
+            w = w.master
+        return False
 
     def _start_rename(self):
         if self._renaming:
@@ -2769,12 +2831,12 @@ class RenamePage(AppPage):
     def refresh_language(self):
         super().refresh_language()
         self._update_dir_label()
-        self._format_options = [
-            self.t("rename_tpl_track"),
-            self.t("rename_tpl_artist"),
-        ]
-        self._format_var.set(self._format_options[0])
-        self._format_menu.configure(values=self._format_options)
+        new_val = self.t("rename_tpl_track")
+        self._format_var.set(new_val)
+        self._format_entry.configure(state="normal")
+        self._format_entry.delete(0, "end")
+        self._format_entry.insert(0, new_val)
+        self._format_entry.configure(state="readonly")
 
 
 def main():
