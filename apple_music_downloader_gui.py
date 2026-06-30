@@ -250,6 +250,8 @@ I18N = {
         "rename_failed": "失败: {file}",
         "rename_complete": "重命名完毕，共处理 {total} 个文件",
         "rename_no_tag": "跳过(缺少标签): {file}",
+        "rename_tpl_track": "编号. 音乐名",
+        "rename_tpl_artist": "歌手 - 音乐名",
     },
     "en": {
         "app_title": "Apple Music Downloader",
@@ -351,6 +353,8 @@ I18N = {
         "rename_failed": "Failed: {file}",
         "rename_complete": "Rename complete, total {total} files",
         "rename_no_tag": "Skip (missing tag): {file}",
+        "rename_tpl_track": "TrackNumber. SongName",
+        "rename_tpl_artist": "Artist - SongName",
     },
 }
 
@@ -2595,13 +2599,21 @@ class RenamePage(AppPage):
         lbl.pack(side="left", padx=(0, 4))
         self._reg(lbl, "rename_format_label")
 
-        self._format_entry = ctk.CTkEntry(btn_frame, height=30, corner_radius=6,
-                                           fg_color=c["input_bg"], text_color=c["text"],
-                                           border_color=c["border"],
-                                           font=ctk.CTkFont(family=f, size=12),
-                                           width=160)
-        self._format_entry.pack(side="left", padx=(0, 6))
-        self._format_entry.insert(0, "player - music_name")
+        self._format_options = [
+            self.t("rename_tpl_track"),
+            self.t("rename_tpl_artist"),
+        ]
+        self._format_var = ctk.StringVar(value=self._format_options[0])
+        self._format_menu = ctk.CTkOptionMenu(btn_frame, variable=self._format_var,
+                                               values=self._format_options,
+                                               width=160, height=30, corner_radius=6,
+                                               fg_color=c["input_bg"], button_color=c["border"],
+                                               button_hover_color=c["divider"],
+                                               dropdown_fg_color=c["card"],
+                                               dropdown_hover_color=c["hover"],
+                                               text_color=c["text"],
+                                               font=ctk.CTkFont(family=f, size=12))
+        self._format_menu.pack(side="left", padx=(0, 6))
 
         self._rename_btn = ctk.CTkButton(btn_frame, text=self.t("rename_btn"),
                                           width=90, height=30, corner_radius=6,
@@ -2667,7 +2679,8 @@ class RenamePage(AppPage):
 
     def _do_rename(self):
         ffprobe = shutil.which("ffprobe") or "ffprobe"
-        fmt_str = self._format_entry.get().strip()
+        selected_fmt = self._format_var.get()
+        is_track = selected_fmt == self.t("rename_tpl_track")
         self.after(0, lambda: self.log(self.t("rename_scanning")))
 
         files = []
@@ -2690,8 +2703,6 @@ class RenamePage(AppPage):
         self.after(0, lambda: self.log(self.t("rename_found", count=len(files))))
         total = len(files)
         ok_count = 0
-
-        TAG_MAP = {"player": "ARTIST", "music_name": "TITLE"}
 
         for i, src in enumerate(files):
             name = os.path.basename(src)
@@ -2720,12 +2731,19 @@ class RenamePage(AppPage):
 
             artist = tags.get("ARTIST", "")
             title = tags.get("TITLE", "")
-            if not artist or not title:
-                self.after(0, lambda n=name: self.log(self.t("rename_no_tag", file=n)))
-                continue
 
-            # Build new filename
-            new_base = fmt_str.replace("player", artist).replace("music_name", title)
+            if is_track:
+                if not title:
+                    self.after(0, lambda n=name: self.log(self.t("rename_no_tag", file=n)))
+                    continue
+                track_num = os.path.splitext(name)[0].split('.')[0]
+                new_base = track_num + "." + title
+            else:
+                if not artist or not title:
+                    self.after(0, lambda n=name: self.log(self.t("rename_no_tag", file=n)))
+                    continue
+                new_base = artist + " - " + title
+
             new_name = new_base + ext
             new_path = os.path.join(os.path.dirname(src), new_name)
 
@@ -2751,6 +2769,12 @@ class RenamePage(AppPage):
     def refresh_language(self):
         super().refresh_language()
         self._update_dir_label()
+        self._format_options = [
+            self.t("rename_tpl_track"),
+            self.t("rename_tpl_artist"),
+        ]
+        self._format_var.set(self._format_options[0])
+        self._format_menu.configure(values=self._format_options)
 
 
 def main():
