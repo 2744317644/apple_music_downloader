@@ -2606,7 +2606,7 @@ class RenamePage(AppPage):
                                           fg_color=c["input_bg"], text_color=c["text"],
                                           border_color=c["border"],
                                           font=ctk.CTkFont(family=f, size=12),
-                                          width=70, justify="center")
+                                          width=90, justify="center")
         self._format_entry.pack(side="left", padx=(0, 6))
         self._format_entry.insert(0, self.t("rename_tpl_track"))
         self._format_entry.configure(state="readonly")
