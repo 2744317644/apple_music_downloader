@@ -191,6 +191,18 @@ build.bat
 | `convert-after-download` | 下载后是否转换格式 |
 | `convert-format` | 转换目标格式：flac / mp3 / opus / wav / copy |
 
+### GUI 功能
+
+#### 格式转换
+
+选择 `.m4a` 所在目录，递归扫描所有 `.m4a` 文件并转换为 FLAC，支持跳过已转换文件。使用 ffmpeg 直接编码（libFLAC），无需额外管道。
+
+#### 音频重命名
+
+选择 FLAC/WAV 所在目录，支持两种命名模板：
+- **编号. 音乐名**：提取文件名中的编号 + 标签中的歌曲名（如 `01.WILD.flac`）
+- **歌手 - 音乐名**：提取标签中的艺术家和歌曲名（如 `Troye Sivan - WILD.flac`）
+
 ### 文件名模板变量
 
 - 专辑文件夹：`{AlbumId}` `{AlbumName}` `{ArtistName}` `{ReleaseDate}` `{ReleaseYear}` `{UPC}` `{Copyright}` `{Quality}` `{Codec}` `{Tag}` `{RecordLabel}`

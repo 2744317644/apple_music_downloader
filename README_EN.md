@@ -191,6 +191,18 @@ The config file is located at `%LOCALAPPDATA%\AppleMusicDownloader\config.yaml`.
 | `convert-after-download` | Enable post-download format conversion |
 | `convert-format` | Target format: flac / mp3 / opus / wav / copy |
 
+### GUI Features
+
+#### Format Conversion
+
+Select the folder containing `.m4a` files, recursively scans all `.m4a` files and converts to FLAC. Supports skipping already converted files. Uses ffmpeg directly with libFLAC encoder — no extra piping required.
+
+#### Audio Rename
+
+Select folder containing FLAC/WAV files. Supports two naming templates:
+- **TrackNumber. SongName**: Extracts track number from filename + song name from tags (e.g., `01.WILD.flac`)
+- **Artist - SongName**: Extracts artist and song name from tags (e.g., `Troye Sivan - WILD.flac`)
+
 ### Naming Template Variables
 
 - Album folder: `{AlbumId}` `{AlbumName}` `{ArtistName}` `{ReleaseDate}` `{ReleaseYear}` `{UPC}` `{Copyright}` `{Quality}` `{Codec}` `{Tag}` `{RecordLabel}`
