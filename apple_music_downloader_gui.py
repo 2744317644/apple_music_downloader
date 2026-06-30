@@ -2610,7 +2610,7 @@ class RenamePage(AppPage):
                                                fg_color=c["input_bg"], button_color=c["border"],
                                                button_hover_color=c["divider"],
                                                dropdown_fg_color=c["card"],
-                                               dropdown_hover_color=c["hover"],
+                                               dropdown_hover_color=c["divider"],
                                                text_color=c["text"],
                                                font=ctk.CTkFont(family=f, size=12))
         self._format_menu.pack(side="left", padx=(0, 6))
