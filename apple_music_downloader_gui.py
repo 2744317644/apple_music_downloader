@@ -4,7 +4,6 @@ Requires: Python 3.7+, Docker, customtkinter
 """
 
 import os
-import re
 import sys
 import time
 import shutil
@@ -18,78 +17,20 @@ from datetime import datetime
 import customtkinter as ctk
 from PIL import Image, ImageDraw
 
-if getattr(sys, 'frozen', False):
-    SCRIPT_DIR = os.path.dirname(sys.executable)
-    DATA_DIR = sys._MEIPASS
-else:
-    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-    DATA_DIR = SCRIPT_DIR
-DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
-CONFIG_FILE = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "AppleMusicDownloader", "config.yaml")
-CONFIG_EXAMPLE = os.path.join(DATA_DIR, "config.yaml.example")
-CONFIG_EXAMPLE_ALT = os.path.join(DATA_DIR, "assets", "apple-music-downloader", "config.yaml.example")
-
-APP_DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "AppleMusicDownloader")
-
-WRAPPER_SRC = os.environ.get("WRAPPER_SRC", os.path.join(DATA_DIR, "assets", "Wrapper"))
-WRAPPER_IMAGE = "wrapper:local"
-WRAPPER_NAME = "am-wrapper"
-WRAPPER_DATA_DIR = os.path.join(APP_DATA_DIR, "wrapper-data")
-
-DECRYPT_PORT = 10020
-M3U8_PORT = 20020
-ACCOUNT_PORT = 30020
-
-REGISTRY_MIRROR = os.environ.get("REGISTRY_MIRROR", "docker.m.daocloud.io")
-
-# ---- Downloader settings ----
-DL_SRC = os.environ.get("DL_SRC", os.path.join(DATA_DIR, "assets", "apple-music-downloader"))
-DL_IMAGE = "apple-music-downloader:local"
+from common import (
+    SCRIPT_DIR, DATA_DIR, DOWNLOAD_DIR, CONFIG_FILE,
+    APP_DATA_DIR, WRAPPER_SRC, WRAPPER_IMAGE, WRAPPER_NAME, WRAPPER_DATA_DIR,
+    DECRYPT_PORT, M3U8_PORT, ACCOUNT_PORT, DL_SRC, DL_IMAGE, MIRROR_PROFILES,
+    get_config_path, load_config_content, get_download_folder,
+    wrapper_running, load_images_from_dir, export_images,
+    build_wrapper_image, build_downloader_image,
+    wrapper_login as _common_wrapper_login,
+    do_start_wrapper as _common_do_start_wrapper,
+    stop_wrapper, prepare_config_for_docker,
+    _SI, _CF,
+)
 
 FLAC_EXE = os.environ.get("FLAC_EXE", os.path.join(DATA_DIR, "assets", "flac.exe"))
-
-
-def get_config_path():
-    """返回配置文件路径：若不存在则从示例复制"""
-    os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
-    if not os.path.isfile(CONFIG_FILE):
-        example = None
-        if os.path.isfile(CONFIG_EXAMPLE):
-            example = CONFIG_EXAMPLE
-        elif os.path.isfile(CONFIG_EXAMPLE_ALT):
-            example = CONFIG_EXAMPLE_ALT
-        if example:
-            shutil.copy(example, CONFIG_FILE)
-            session_log.write(f"[INFO] 默认配置已复制到: {CONFIG_FILE}")
-        else:
-            session_log.write(f"[WARN] 未找到示例: {CONFIG_EXAMPLE}")
-    if not os.path.isfile(CONFIG_FILE):
-        session_log.write(f"[WARN] 配置文件不存在: {CONFIG_FILE}")
-        return None
-    return CONFIG_FILE
-
-
-def load_config_content():
-    """加载配置文件内容"""
-    path = get_config_path()
-    if path:
-        with open(path, 'r', encoding='utf-8') as f:
-            return f.read()
-    return ""
-
-
-def get_download_folder():
-    """根据 config.yaml 的 alac-save-folder 拼接实际下载目录"""
-    try:
-        content = load_config_content()
-        m = re.search(r'^alac-save-folder:\s*"?([^"\n\r]+)"?\s*$', content, re.MULTILINE)
-        if m:
-            folder = m.group(1).strip()
-            if folder:
-                return os.path.join(os.path.expanduser("~"), "Downloads", folder)
-    except Exception:
-        pass
-    return DOWNLOAD_DIR
 
 
 FONT_FAMILY = "Microsoft YaHei"
@@ -100,6 +41,8 @@ LOG_DIR = os.path.join(APP_DATA_DIR, "log")
 
 
 class SessionLogger:
+    _MAX_HISTORY = 5000
+
     def __init__(self):
         self._history = []
         os.makedirs(LOG_DIR, exist_ok=True)
@@ -112,6 +55,8 @@ class SessionLogger:
         ts = datetime.now().strftime("%H:%M:%S")
         line = f"[{ts}] {msg}"
         self._history.append(line)
+        if len(self._history) > self._MAX_HISTORY:
+            self._history = self._history[-self._MAX_HISTORY:]
         try:
             self._file.write(line + "\n")
             self._file.flush()
@@ -157,6 +102,11 @@ I18N = {
         "checking": "正在检测环境...",
         "retry": "重试",
         "start_docker": "启动 Docker",
+        "docker_not_running": "Docker 未运行，请先启动 Docker Desktop，然后点击重试",
+        "select_mirror_title": "选择镜像源",
+        "select_mirror_msg": "选择构建镜像时使用的镜像源：\n\n国内镜像：DaoCloud + 清华 apt（国内推荐）\n国际源：Docker Hub + 默认 apt（海外推荐）",
+        "mirror_cn": "国内镜像",
+        "mirror_intl": "国际源",
         "sign_in": "登录",
         "tips_login": "登录一次即可缓存凭据，无需重复输入",
         "apple_id": "Apple ID",
@@ -260,6 +210,11 @@ I18N = {
         "checking": "Checking environment...",
         "retry": "Retry",
         "start_docker": "Start Docker",
+        "docker_not_running": "Docker is not running. Please start Docker Desktop, then click Retry",
+        "select_mirror_title": "Select Mirror Source",
+        "select_mirror_msg": "Select the mirror source for building images:\n\nChina Mirror: DaoCloud + Tsinghua apt (recommended for China)\nInternational: Docker Hub + default apt (recommended for overseas)",
+        "mirror_cn": "China Mirror",
+        "mirror_intl": "International",
         "sign_in": "Sign In",
         "tips_login": "Login once to cache credentials, no need to re-enter",
         "apple_id": "Apple ID",
@@ -360,12 +315,6 @@ I18N = {
 
 DEFAULT_LANG = "zh"
 
-# Prevent subprocess console windows on Windows
-_SI = subprocess.STARTUPINFO()
-_SI.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-_SI.wShowWindow = subprocess.SW_HIDE
-_CF = subprocess.CREATE_NO_WINDOW
-
 
 def _run(*args, capture=True, silent=True, check=False):
     try:
@@ -382,341 +331,12 @@ def _live(*args):
                           startupinfo=_SI, creationflags=_CF).returncode
 
 
-def wrapper_running():
-    out = _run("docker", "ps", "-q", "-f", f"name={WRAPPER_NAME}", silent=True)
-    return len(out) > 0
-
-
-def load_docker_image(tar_path, log_callback=None):
-    """Load a Docker image from a local .tar file."""
-    if not os.path.isfile(tar_path):
-        msg = f"File not found: {tar_path}"
-        if log_callback:
-            log_callback(f"[ERROR] {msg}")
-        return False, msg
-    if log_callback:
-        log_callback(f"Loading image from: {tar_path}")
-    try:
-        result = subprocess.run(
-            ["docker", "load", "-i", tar_path],
-            capture_output=True, text=True,
-            startupinfo=_SI, creationflags=_CF
-        )
-        if result.returncode == 0:
-            msg = result.stdout.strip()
-            if log_callback:
-                log_callback(f"[OK] {msg}")
-            return True, msg
-        else:
-            err = result.stderr.strip() or result.stdout.strip()
-            if log_callback:
-                log_callback(f"[ERROR] docker load failed: {err[:500]}")
-            return False, err[:500]
-    except Exception as e:
-        msg = str(e)
-        if log_callback:
-            log_callback(f"[ERROR] {msg}")
-        return False, msg
-
-
-def load_images_from_dir(image_dir, log_callback=None):
-    """Load all .tar files from a directory as Docker images."""
-    if not os.path.isdir(image_dir):
-        if log_callback:
-            log_callback(f"[ERROR] Directory not found: {image_dir}")
-        return
-    tar_files = sorted([f for f in os.listdir(image_dir) if f.endswith('.tar')])
-    if not tar_files:
-        if log_callback:
-            log_callback(f"[WARN] No .tar files found in: {image_dir}")
-        return
-    if log_callback:
-        log_callback(f"Found {len(tar_files)} .tar file(s) in: {image_dir}")
-    for tf in tar_files:
-        load_docker_image(os.path.join(image_dir, tf), log_callback)
-    _auto_tag_images(log_callback)
-
-
-def _get_all_image_repos():
-    try:
-        out = subprocess.run(
-            ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"],
-            capture_output=True, text=True,
-            startupinfo=_SI, creationflags=_CF
-        )
-        return set(line.strip() for line in out.stdout.strip().split('\n') if line.strip())
-    except Exception:
-        return set()
-
-
-def _auto_tag_images(log_callback=None):
-    tag_map = [
-        (WRAPPER_IMAGE, ["wrapper"]),
-        (DL_IMAGE, ["apple-music-downloader", "am-downloader", "downloader"]),
-    ]
-    for target, hints in tag_map:
-        if _run("docker", "images", "-q", target, silent=True):
-            continue
-        for repo_tag in _get_all_image_repos():
-            if repo_tag == target:
-                continue
-            if any(h in repo_tag.lower() for h in hints):
-                if log_callback:
-                    log_callback(f"Auto-tagging {repo_tag} -> {target}")
-                _live("docker", "tag", repo_tag, target)
-                break
-
-
-def export_images(output_dir=None, log_callback=None):
-    if output_dir is None:
-        output_dir = os.path.join(os.path.expanduser("~"), "Downloads")
-    os.makedirs(output_dir, exist_ok=True)
-    wrapper_tar = os.path.join(output_dir, "wrapper_local.tar")
-    dl_tar = os.path.join(output_dir, "apple-music-downloader_local.tar")
-    all_ok = True
-    for image, tar_path, label in [
-        (WRAPPER_IMAGE, wrapper_tar, "Wrapper"),
-        (DL_IMAGE, dl_tar, "Downloader"),
-    ]:
-        if not _run("docker", "images", "-q", image, silent=True):
-            if log_callback:
-                log_callback(f"[WARN] Image '{image}' not found, skipping")
-            all_ok = False
-            continue
-        if log_callback:
-            log_callback(f"Exporting {label}: {image} -> {tar_path}")
-        code = _live("docker", "save", "-o", tar_path, image)
-        if code == 0:
-            if log_callback:
-                log_callback(f"[OK] Exported: {tar_path}")
-        else:
-            if log_callback:
-                log_callback(f"[ERROR] Failed to export {image}")
-            all_ok = False
-    if all_ok and log_callback:
-        log_callback(f"[OK] All images exported to: {output_dir}")
-    return all_ok
-
-
-def build_wrapper_image(log_callback=None):
-    src = WRAPPER_SRC
-    if not os.path.isdir(src):
-        return False, f"Wrapper source not found: {src}"
-    dockerfile = os.path.join(src, "Dockerfile")
-    if not os.path.isfile(dockerfile):
-        return False, f"{src} must contain Dockerfile"
-    if log_callback:
-        log_callback(f"Building wrapper image from: {src}")
-        log_callback(f"  REGISTRY_MIRROR={REGISTRY_MIRROR}")
-    err_lines = []
-    proc = subprocess.Popen(["docker", "build",
-        "--build-arg", f"REGISTRY_MIRROR={REGISTRY_MIRROR}",
-        "--tag", WRAPPER_IMAGE, src],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-        startupinfo=_SI, creationflags=_CF)
-    for line in proc.stdout:
-        line = line.strip()
-        if line:
-            if log_callback:
-                log_callback(line)
-            err_lines.append(line)
-    proc.wait()
-    if proc.returncode != 0:
-        err = "\n".join(err_lines[-10:]) or "Unknown error"
-        return False, f"Build failed: {err[:500]}"
-    return True, f"Wrapper image built: {WRAPPER_IMAGE}"
-
-
-def wrapper_login(username, password, log_callback=None):
-    if log_callback:
-        log_callback("Starting login container...")
-    os.makedirs(WRAPPER_DATA_DIR, exist_ok=True)
-    _run("docker", "rm", "-f", f"{WRAPPER_NAME}-login", silent=True)
-    db_file = os.path.join(
-        os.path.abspath(WRAPPER_DATA_DIR),
-        "data", "com.apple.android.music", "files", "mpl_db", "kvs.sqlitedb"
-    )
-    if os.path.isfile(db_file):
-        os.remove(db_file)
-    if log_callback:
-        log_callback("Launching wrapper login container...")
-    code = _live(
-        "docker", "run", "-dit",
-        "--name", f"{WRAPPER_NAME}-login",
-        "--privileged",
-        "-v", f"{os.path.abspath(WRAPPER_DATA_DIR)}:/app/rootfs/data",
-        "-e", f"USERNAME={username}",
-        "-e", f"PASSWORD={password}",
-        "--entrypoint", "/bin/sh",
-        WRAPPER_IMAGE,
-        "-c", "mkdir -p /app/rootfs/system/usr/share/zoneinfo /app/rootfs/etc; cp /usr/share/zoneinfo/tzdata.zi /app/rootfs/system/usr/share/zoneinfo/tzdata; cp /etc/hosts /app/rootfs/etc/hosts; cp /etc/resolv.conf /app/rootfs/etc/resolv.conf; export ANDROID_ROOT=/app/rootfs/system; export ANDROID_DATA=/app/rootfs/data; mkdir -p /app/rootfs/data/data/com.apple.android.music/files/mpl_db; exec /app/wrapper -L ${USERNAME}:${PASSWORD} -F -H 0.0.0.0",
-    )
-    if code != 0:
-        return False, "Failed to start login container"
-    if log_callback:
-        log_callback("Waiting for credential database...")
-    waited = 0
-    last_lines = 0
-    while not os.path.isfile(db_file) and waited < 120:
-        time.sleep(2)
-        waited += 2
-        if log_callback:
-            out = _run("docker", "logs", f"{WRAPPER_NAME}-login", silent=True)
-            if out:
-                lines = out.split('\n')
-                if len(lines) > last_lines:
-                    for line in lines[last_lines:]:
-                        s = line.strip()
-                        if s:
-                            log_callback(s)
-                    last_lines = len(lines)
-    if not os.path.isfile(db_file):
-        exit_code = _run("docker", "inspect", "-f", "{{.State.ExitCode}}", f"{WRAPPER_NAME}-login", silent=True)
-        logs = _run("docker", "logs", f"{WRAPPER_NAME}-login")
-        if log_callback:
-            log_callback(f"[ERROR] Login failed (exit={exit_code})")
-            if logs:
-                lines = logs.split('\n')
-                unseen = lines[last_lines:] if len(lines) > last_lines else lines
-                for line in unseen:
-                    s = line.strip()
-                    if s:
-                        log_callback(s)
-        _run("docker", "rm", "-f", f"{WRAPPER_NAME}-login", silent=True)
-        return False, f"Login failed (exit={exit_code}). {logs}"
-    if log_callback:
-        log_callback("[OK] Credential database created")
-    fsi_file = os.path.join(
-        os.path.abspath(WRAPPER_DATA_DIR),
-        "data", "com.apple.android.music", "files", "fsi.pdat"
-    )
-    if log_callback:
-        log_callback("Waiting for FairPlay registration...")
-    waited = 0
-    last_lines = 0
-    while not os.path.isfile(fsi_file) and waited < 120:
-        time.sleep(2)
-        waited += 2
-        if log_callback:
-            out = _run("docker", "logs", f"{WRAPPER_NAME}-login", silent=True)
-            if out:
-                lines = out.split('\n')
-                if len(lines) > last_lines:
-                    for line in lines[last_lines:]:
-                        s = line.strip()
-                        if s:
-                            log_callback(s)
-                    last_lines = len(lines)
-    _run("docker", "rm", "-f", f"{WRAPPER_NAME}-login", silent=True)
-    if os.path.isfile(fsi_file):
-        if log_callback:
-            log_callback("[OK] FairPlay registered")
-        return True, "Login successful. Credentials cached."
-    if log_callback:
-        log_callback("[WARN] FairPlay not registered, may retry on first download")
-    return False, "Login may have failed."
+def wrapper_login(username, password, log_callback=None, twofa_callback=None):
+    return _common_wrapper_login(username, password, log_callback=log_callback, twofa_callback=twofa_callback)
 
 
 def do_start_wrapper(log_callback=None):
-    if wrapper_running():
-        return True, "Wrapper is already running"
-    os.makedirs(WRAPPER_DATA_DIR, exist_ok=True)
-    data_dir = os.path.abspath(WRAPPER_DATA_DIR)
-    if not _run("docker", "images", "-q", WRAPPER_IMAGE, silent=True):
-        return False, f"Wrapper image '{WRAPPER_IMAGE}' not found"
-    db_file = os.path.join(data_dir, "data", "com.apple.android.music", "files", "mpl_db", "kvs.sqlitedb")
-    if not os.path.isfile(db_file):
-        return False, "NEED_LOGIN"
-    _run("docker", "rm", "-f", WRAPPER_NAME, silent=True)
-    if log_callback:
-        log_callback("Launching wrapper container...")
-    code = _live(
-        "docker", "run", "-dit",
-        "--name", WRAPPER_NAME,
-        "--privileged",
-        "-v", f"{data_dir}:/app/rootfs/data",
-        "-p", f"{DECRYPT_PORT}:{DECRYPT_PORT}",
-        "-p", f"{M3U8_PORT}:{M3U8_PORT}",
-        "-p", f"{ACCOUNT_PORT}:{ACCOUNT_PORT}",
-        "--entrypoint", "/bin/sh",
-        WRAPPER_IMAGE,
-        "-c", "mkdir -p /app/rootfs/system/usr/share/zoneinfo /app/rootfs/etc; cp /usr/share/zoneinfo/tzdata.zi /app/rootfs/system/usr/share/zoneinfo/tzdata; cp /etc/hosts /app/rootfs/etc/hosts; cp /etc/resolv.conf /app/rootfs/etc/resolv.conf; export ANDROID_ROOT=/app/rootfs/system; export ANDROID_DATA=/app/rootfs/data; exec /app/wrapper -H 0.0.0.0",
-    )
-    if code != 0:
-        return False, "Failed to start wrapper"
-    if log_callback:
-        log_callback("Waiting for wrapper to initialize...")
-    last_lines = 0
-    for _ in range(8):
-        time.sleep(2)
-        if wrapper_running():
-            # stream any remaining logs
-            if log_callback:
-                out = _run("docker", "logs", WRAPPER_NAME, silent=True)
-                if out:
-                    lines = out.split('\n')
-                    if len(lines) > last_lines:
-                        for line in lines[last_lines:]:
-                            s = line.strip()
-                            if s:
-                                log_callback(s)
-        if log_callback:
-            out = _run("docker", "logs", WRAPPER_NAME, silent=True)
-            if out:
-                lines = out.split('\n')
-                if len(lines) > last_lines:
-                    for line in lines[last_lines:]:
-                        s = line.strip()
-                        if s:
-                            log_callback(s)
-                    last_lines = len(lines)
-    if wrapper_running():
-        return True, f"Wrapper running (ports: {DECRYPT_PORT}/{M3U8_PORT}/{ACCOUNT_PORT})"
-    else:
-        logs = _run("docker", "logs", WRAPPER_NAME)
-        if log_callback and logs:
-            for line in logs.split('\n'):
-                s = line.strip()
-                if s:
-                    log_callback(s)
-        if os.path.isfile(db_file):
-            os.remove(db_file)
-        return False, f"NEED_LOGIN\n{logs}"
-
-
-def stop_wrapper():
-    _run("docker", "rm", "-f", f"{WRAPPER_NAME}-login", silent=True)
-    if wrapper_running():
-        _run("docker", "rm", "-f", WRAPPER_NAME, silent=True)
-
-
-def build_downloader_image(log_callback=None):
-    src = DL_SRC
-    if not os.path.isdir(src):
-        return False, f"Downloader source not found: {src}"
-    dockerfile = os.path.join(src, "Dockerfile")
-    if not os.path.isfile(dockerfile):
-        return False, f"{src} must contain Dockerfile"
-    if log_callback:
-        log_callback(f"Building downloader image from: {src}")
-        log_callback(f"  REGISTRY_MIRROR={REGISTRY_MIRROR}")
-    err_lines = []
-    proc = subprocess.Popen(["docker", "build",
-        "--build-arg", f"REGISTRY_MIRROR={REGISTRY_MIRROR}",
-        "--tag", DL_IMAGE, src],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-        startupinfo=_SI, creationflags=_CF)
-    for line in proc.stdout:
-        line = line.strip()
-        if line:
-            if log_callback:
-                log_callback(line)
-            err_lines.append(line)
-    proc.wait()
-    if proc.returncode != 0:
-        err = "\n".join(err_lines[-10:]) or "Unknown error"
-        return False, f"Build failed: {err[:500]}"
-    return True, f"Downloader image built: {DL_IMAGE}"
+    return _common_do_start_wrapper(log_callback=log_callback)
 
 
 def _make_close(size=16, color="#86868B"):
@@ -877,6 +497,7 @@ class SetupPage(AppPage):
         self.log_text = None
         self.progress = None
         self.status_label = None
+        self._mirror_profile = "cn"
         self.build_ui()
 
     def build_ui(self):
@@ -917,24 +538,14 @@ class SetupPage(AppPage):
         self.log_text.pack(pady=16, fill="both", expand=True)
 
         self.retry_btn = ctk.CTkButton(container, text=self.t("retry"),
-                                        fg_color=c["primary"],
-                                        hover_color=c["primary_hover"],
-                                        corner_radius=10,
-                                        font=ctk.CTkFont(family=f, size=13),
-                                        command=self.start_setup)
+                                         fg_color=c["primary"],
+                                         hover_color=c["primary_hover"],
+                                         corner_radius=10,
+                                         font=ctk.CTkFont(family=f, size=13),
+                                         command=self.start_setup)
         self.retry_btn.pack(pady=8)
         self.retry_btn.pack_forget()
         self._reg(self.retry_btn, "retry")
-
-        self.start_docker_btn = ctk.CTkButton(container, text=self.t("start_docker"),
-                                               fg_color=c["primary"],
-                                               hover_color=c["primary_hover"],
-                                               corner_radius=10,
-                                               font=ctk.CTkFont(family=f, size=13),
-                                               command=self._start_docker)
-        self.start_docker_btn.pack(pady=8)
-        self.start_docker_btn.pack_forget()
-        self._reg(self.start_docker_btn, "start_docker")
 
     def on_show(self):
         if not self.app.setup_done:
@@ -954,62 +565,29 @@ class SetupPage(AppPage):
         if self.progress:
             self.progress.set(val)
 
-    def _start_docker(self):
-        self.start_docker_btn.pack_forget()
-        self._try_launch_docker()
-        threading.Thread(target=self._wait_docker_and_continue, daemon=True).start()
-
     def start_setup(self):
         self.log_text.delete("1.0", "end")
         self.set_progress(0)
         self.retry_btn.pack_forget()
-        self.start_docker_btn.pack_forget()
 
-        # Check Docker daemon, auto-start if needed
         if subprocess.call(["docker", "info"],
                            stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL,
                            startupinfo=_SI, creationflags=_CF) != 0:
-            self.log("Docker daemon not running, attempting to start...")
-            self.set_status("Starting Docker Desktop...")
-            self._try_launch_docker()
-            threading.Thread(target=self._wait_docker_and_continue, daemon=True).start()
+            self.log(self.t("docker_not_running"))
+            self.set_status(self.t("docker_not_running"))
+            self.retry_btn.pack(pady=8)
             return
 
         self.log("Docker OK")
         self._continue_setup()
-
-    def _try_launch_docker(self):
-        docker_exe = os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"),
-                                  "Docker", "Docker", "Docker Desktop.exe")
-        if not os.path.isfile(docker_exe):
-            docker_exe = os.path.join(os.environ.get("LocalAppData", ""),
-                                      "Docker", "Docker Desktop.exe")
-        if os.path.isfile(docker_exe):
-            subprocess.Popen([docker_exe], startupinfo=_SI, creationflags=_CF)
-        else:
-            self.log("Docker Desktop not found at known paths")
-
-    def _wait_docker_and_continue(self):
-        for i in range(60):
-            time.sleep(2)
-            if subprocess.call(["docker", "info"],
-                               stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL,
-                               startupinfo=_SI, creationflags=_CF) == 0:
-                self.after(0, lambda: self.log("Docker is ready"))
-                self.after(0, self._continue_setup)
-                return
-        self.after(0, lambda: self.log("Docker did not start in time"))
-        self.after(0, lambda: self.set_status("Docker failed to start"))
-        self.after(0, lambda: self.start_docker_btn.pack(pady=8))
 
     def _continue_setup(self):
         need_wrapper = not _run("docker", "images", "-q", WRAPPER_IMAGE, silent=True)
         need_downloader = not _run("docker", "images", "-q", DL_IMAGE, silent=True)
 
         if not (need_wrapper or need_downloader):
-            threading.Thread(target=self._run_setup, daemon=True).start()
+            threading.Thread(target=self._run_setup_steps, daemon=True).start()
             return
 
         self.after(200, self._prompt_local_image)
@@ -1037,9 +615,73 @@ class SetupPage(AppPage):
     def _load_images_and_setup(self, image_dir):
         load_images_from_dir(image_dir, self.log)
         self.after(0, lambda: self.set_status("Image loading done, starting checks..."))
-        self._run_setup()
+        self._run_setup_steps()
 
     def _run_setup(self):
+        self.after(0, self._ask_mirror)
+        return
+
+    def _ask_mirror(self):
+        c = self.app.colors
+        f = FONT_FAMILY
+
+        dlg = ctk.CTkToplevel(self)
+        dlg.title(self.t("select_mirror_title"))
+        dlg.geometry("380x200")
+        dlg.resizable(False, False)
+        dlg.transient(self)
+        dlg.grab_set()
+
+        dlg.update_idletasks()
+        main_x = self.winfo_rootx()
+        main_y = self.winfo_rooty()
+        main_w = self.winfo_width()
+        main_h = self.winfo_height()
+        dlg_w = dlg.winfo_width()
+        dlg_h = dlg.winfo_height()
+        x = main_x + (main_w - dlg_w) // 2
+        y = main_y + (main_h - dlg_h) // 2
+        dlg.geometry(f"+{x}+{y}")
+
+        lbl = ctk.CTkLabel(dlg, text=self.t("select_mirror_msg"),
+                           font=ctk.CTkFont(family=f, size=13),
+                           text_color=c["text"], wraplength=340, justify="center")
+        lbl.pack(pady=(24, 16), padx=20)
+
+        result = [None]
+
+        def _pick(val):
+            result[0] = val
+            dlg.destroy()
+
+        btn_row = ctk.CTkFrame(dlg, fg_color="transparent")
+        btn_row.pack(pady=8)
+
+        cn = MIRROR_PROFILES["cn"]
+        intl = MIRROR_PROFILES["intl"]
+
+        ctk.CTkButton(btn_row, text=f"{cn['label']}\n{cn['registry']}",
+                      width=160, height=50, corner_radius=8,
+                      fg_color=c["primary"], hover_color=c["primary_hover"],
+                      text_color="white",
+                      font=ctk.CTkFont(family=f, size=12),
+                      command=lambda: _pick("cn")).pack(side="left", padx=6)
+
+        ctk.CTkButton(btn_row, text=f"{intl['label']}\n{intl['registry']}",
+                      width=160, height=50, corner_radius=8,
+                      fg_color=c["input_bg"], hover_color=c["divider"],
+                      text_color=c["text"],
+                      font=ctk.CTkFont(family=f, size=12),
+                      command=lambda: _pick("intl")).pack(side="left", padx=6)
+
+        dlg.protocol("WM_DELETE_WINDOW", lambda: _pick("cn"))
+        dlg.wait_window()
+
+        self._mirror_profile = result[0] or "cn"
+        self.log(f"Mirror: {MIRROR_PROFILES[self._mirror_profile]['label']}")
+        threading.Thread(target=self._run_setup_steps, daemon=True).start()
+
+    def _run_setup_steps(self):
         steps = [
             ("Build Wrapper Image", self._check_wrapper),
             ("Build Downloader Image", self._check_downloader),
@@ -1054,10 +696,7 @@ class SetupPage(AppPage):
                 self.log(msg)
                 if not ok:
                     self.set_status(f"FAILED: {name}")
-                    if "daemon" in msg:
-                        self.after(0, lambda: self.start_docker_btn.pack(pady=8))
-                    else:
-                        self.after(0, lambda: self.retry_btn.pack(pady=8))
+                    self.after(0, lambda: self.retry_btn.pack(pady=8))
                     return
             except Exception as e:
                 self.log(f"Error: {e}")
@@ -1087,21 +726,21 @@ class SetupPage(AppPage):
 
     def _check_wrapper(self):
         if not _run("docker", "images", "-q", WRAPPER_IMAGE, silent=True):
-            ok, msg = build_wrapper_image(self.log)
+            ok, msg = build_wrapper_image(profile=self._mirror_profile, log_callback=self.log)
             if not ok:
                 return False, msg
         return True, "Wrapper image ready"
 
     def _check_downloader(self):
         if not _run("docker", "images", "-q", DL_IMAGE, silent=True):
-            ok, msg = build_downloader_image(self.log)
+            ok, msg = build_downloader_image(profile=self._mirror_profile, log_callback=self.log)
             if not ok:
                 return False, msg
         return True, "Downloader image ready"
 
     def _start_wrapper(self):
         ok, msg = do_start_wrapper(self.log)
-        if "NEED_LOGIN" in msg:
+        if msg == "NEED_LOGIN":
             return True, "Login required"
         if not ok:
             return False, msg
@@ -1114,7 +753,11 @@ class SetupPage(AppPage):
             os.path.abspath(WRAPPER_DATA_DIR),
             "data", "com.apple.android.music", "files", "mpl_db", "kvs.sqlitedb"
         )
-        if not os.path.isfile(db_file):
+        fsi_file = os.path.join(
+            os.path.abspath(WRAPPER_DATA_DIR),
+            "data", "com.apple.android.music", "files", "fsi.pdat"
+        )
+        if not os.path.isfile(db_file) or not os.path.isfile(fsi_file):
             self.app.show_frame("LoginPage")
         else:
             self.app.show_frame("TabbedContainer")
@@ -1231,7 +874,7 @@ class LoginPage(AppPage):
             for m in messages:
                 self.log_text.insert("end", m + "\n")
             self.log_text.see("end")
-            self.log_text.configure(state="normal")
+            self.log_text.configure(state="disabled")
         self._flush_timer = self.after(100, self._flush_log)
 
     def on_show(self):
@@ -1267,8 +910,29 @@ class LoginPage(AppPage):
     def _login_thread(self, username, password):
         self.after(0, lambda: self.status_label.configure(text="Launching login container..."))
         self.after(0, lambda: self.progress.set(0.3))
-        ok, msg = wrapper_login(username, password, log_callback=self.log)
+
+        twofa_event = threading.Event()
+        twofa_result = [None]
+
+        def _twofa_callback():
+            self.after(0, lambda: self._show_2fa_dialog(twofa_event, twofa_result))
+            twofa_event.wait(timeout=300)
+            return twofa_result[0]
+
+        ok, msg = wrapper_login(username, password, log_callback=self.log, twofa_callback=_twofa_callback)
         self.after(0, lambda: self._login_done(ok, msg))
+
+    def _show_2fa_dialog(self, event, result):
+        from tkinter import simpledialog
+        self.log("[.] 2FA required - check your Apple device")
+        code = simpledialog.askstring(
+            "Two-Factor Authentication",
+            "Enter the verification code sent to your Apple device:",
+            parent=self
+        )
+        if code:
+            result[0] = code.strip()
+        event.set()
 
     def _login_done(self, ok, msg):
         if ok:
@@ -1588,10 +1252,10 @@ class MainPage(AppPage):
     def _toggle_scroll(self):
         if self.console.yview()[1] >= 0.99:
             self.console.see("1.0")
-            self._scroll_btn.configure(text="▼")
+            self._scroll_btn.configure(text="▲")
         else:
             self.console.see("end")
-            self._scroll_btn.configure(text="▲")
+            self._scroll_btn.configure(text="▼")
         self._update_scroll_icon()
 
     def _update_scroll_icon(self):
@@ -1816,7 +1480,7 @@ class MainPage(AppPage):
             if not self.app.wrapper_ready:
                 ok, msg = do_start_wrapper()
                 if not ok:
-                    if "NEED_LOGIN" in msg:
+                    if msg == "NEED_LOGIN":
                         self.app.show_frame("LoginPage")
                         return False
                     self.log(f"[ERROR] {msg}")
@@ -1825,7 +1489,7 @@ class MainPage(AppPage):
             else:
                 ok, msg = do_start_wrapper()
                 if not ok:
-                    if "NEED_LOGIN" in msg:
+                    if msg == "NEED_LOGIN":
                         self.app.show_frame("LoginPage")
                     else:
                         self.log(f"[ERROR] {msg}")
@@ -1897,15 +1561,7 @@ class MainPage(AppPage):
             self.log("[WARN] No config.yaml found, using defaults")
             config_content = ""
 
-        for folder_key in ['alac-save-folder', 'atmos-save-folder', 'aac-save-folder', 'mv-save-folder']:
-            config_content = re.sub(
-                rf'^({folder_key}:\s*)"?([^"\n]+)"?',
-                rf'\1"/downloads/\2"',
-                config_content,
-                flags=re.MULTILINE,
-            )
-        config_content = config_content.replace("127.0.0.1:10020", "host.docker.internal:10020")
-        config_content = config_content.replace("127.0.0.1:20020", "host.docker.internal:20020")
+        config_content = prepare_config_for_docker(config_content)
 
         dl_args = arguments.split()
 
@@ -1947,6 +1603,7 @@ class MainPage(AppPage):
                     if proc.returncode == 0:
                         break
                     self.log(f"Exit code: {proc.returncode}")
+                    continue
                 except Exception:
                     pass
             finally:
@@ -2221,7 +1878,9 @@ class StatusPage(AppPage):
 
         db_file = os.path.join(os.path.abspath(WRAPPER_DATA_DIR),
                                "data", "com.apple.android.music", "files", "mpl_db", "kvs.sqlitedb")
-        has_login = os.path.isfile(db_file)
+        fsi_file = os.path.join(os.path.abspath(WRAPPER_DATA_DIR),
+                                "data", "com.apple.android.music", "files", "fsi.pdat")
+        has_login = os.path.isfile(db_file) and os.path.isfile(fsi_file)
         results["login-cached"] = (has_login, self.t("logged_in") if has_login else self.t("not_logged_in"))
 
         def update():
