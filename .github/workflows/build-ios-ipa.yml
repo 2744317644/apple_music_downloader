@@ -1,0 +1,70 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'webview-ipa/**'
+      - '.github/workflows/build-ios-ipa.yml'
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    env:
+      APP_NAME: ASMR300
+      PROJECT_NAME: ASMR300
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: webview-ipa
+        run: xcodegen generate
+
+      - name: Build unsigned .app
+        working-directory: webview-ipa
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project "${PROJECT_NAME}.xcodeproj" \
+            -scheme "${PROJECT_NAME}" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package unsigned IPA
+        working-directory: webview-ipa
+        run: |
+          set -euo pipefail
+          APP_PATH="build/Build/Products/Release-iphoneos/${APP_NAME}.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::Build output not found at $APP_PATH"
+            exit 1
+          fi
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R "$APP_PATH" "Payload/${APP_NAME}.app"
+          zip -qry "${APP_NAME}-unsigned.ipa" Payload
+          rm -rf Payload
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-unsigned-ipa
+          path: webview-ipa/${{ env.APP_NAME }}-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
