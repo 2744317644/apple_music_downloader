@@ -19,7 +19,7 @@ from common import (
     prepare_run_config, cleanup_run_config, build_downloader_command,
     find_media_user_token, validate_media_user_token, save_media_user_token,
     wrapper_running, wrapper_status, wrapper_service_state, wsl_diagnose,
-    wrapper_health_after_run, login_cached,
+    wrapper_health_after_run, login_cached, kill_downloader,
     start_wrapper_service, restart_wrapper_service, stop_wrapper,
     shutdown_wsl, shutdown_wsl_on_exit_enabled,
     wrapper_login as _common_wrapper_login, _SI, _CF,
@@ -69,6 +69,11 @@ def _live(*args, cwd=None):
     except KeyboardInterrupt:
         try:
             proc.kill()
+        except Exception:
+            pass
+        # Killing wsl.exe does not stop the downloader inside the distro.
+        try:
+            kill_downloader(log_callback=_log_print)
         except Exception:
             pass
         raise

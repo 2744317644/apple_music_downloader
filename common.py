@@ -677,6 +677,35 @@ def stop_wrapper():
     stop_wrapper_service()
 
 
+def kill_downloader(log_callback=None):
+    """Stop any downloader still running inside the distro.
+
+    Killing the Windows-side wsl.exe does NOT stop the process it started:
+    the downloader keeps downloading and writing files, which is why cancel
+    looked like it did nothing. This targets just the downloader binary, so the
+    wrapper service is left alone.
+    """
+    if not wsl_distro_present():
+        return False
+    try:
+        # Bracket trick: the literal pattern "[a]mdl-legacy/amdl" does not match
+        # its own command line, so pkill cannot kill the shell that runs it
+        # (which is what happened with the plain path - the wrapper shell died
+        # before printing the result and this always reported False).
+        pat = "[" + DOWNLOADER_WSL[0] + "]" + DOWNLOADER_WSL[1:]
+        r = _wsl("sh", "-c",
+                 f"pkill -f {_shquote(pat)} && echo KILLED || echo NONE",
+                 timeout=20)
+        out = (r.stdout or "").strip()
+        if "KILLED" in out:
+            _log("Stopped the downloader process inside WSL.", log_callback)
+            return True
+        return False
+    except Exception as e:
+        _log(f"[WARN] Could not stop the downloader: {e}", log_callback)
+        return False
+
+
 def shutdown_wsl_detached():
     """Release the WSL VM without blocking the caller.
 

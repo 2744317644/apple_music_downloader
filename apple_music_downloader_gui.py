@@ -49,7 +49,7 @@ from common import (
     prepare_run_config, cleanup_run_config, build_downloader_command,
     find_media_user_token, validate_media_user_token, save_media_user_token,
     wrapper_running, wrapper_status, wrapper_service_state, wsl_diagnose,
-    wrapper_health_after_run, port_open,
+    wrapper_health_after_run, port_open, kill_downloader,
     start_wrapper_service, restart_wrapper_service, stop_wrapper,
     shutdown_wsl, shutdown_wsl_detached, shutdown_wsl_on_exit_enabled,
     login_cached,
@@ -1580,6 +1580,11 @@ class MainPage(AppPage):
         if self._dl_proc and self._dl_proc.poll() is None:
             self._dl_proc.kill()
             self.log("[CANCEL] Download cancelled")
+        # Killing wsl.exe leaves the downloader running inside the distro.
+        try:
+            kill_downloader(log_callback=self.log)
+        except Exception:
+            pass
         self._reset_download_state()
 
     def _reset_download_state(self):
