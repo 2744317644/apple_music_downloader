@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Build artifacts
+AppleMusicDownloader.exe
+AppleMusicDownloader.spec
+build/
+build_temp/
+dist/
+
+# IDE
+.idea/
+.vscode/
+
+# Local AI tooling data
+.opencode/
