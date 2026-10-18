@@ -119,7 +119,17 @@ def check_status():
     import common
     ok, data, err = common.wrapper_status(timeout=8)
     if not ok:
-        print("not reachable: %s (the app starts the wrapper automatically)" % err)
+        # Not running yet is normal: the app starts it on launch. Do the same
+        # here so the check answers "will it work?" rather than "is it running
+        # this very second?".
+        print("starting the wrapper service...")
+        started, msg = common.start_wrapper_service()
+        if not started:
+            print("could not start it: " + str(msg))
+            return 1
+        ok, data, err = common.wrapper_status(timeout=8)
+    if not ok:
+        print("not reachable: %s" % err)
         return 1
     print("storefront=" + str((data or {}).get("storefront_id")))
     return 0

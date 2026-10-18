@@ -441,7 +441,15 @@ def wrapper_status(timeout=5):
             return True, {}, None
         return True, json.loads(body), None
     except Exception as e:
-        return False, None, str(e)
+        # Windows' connect errors are localised and often arrive mojibaked, so
+        # reduce them to something readable for the UI and the smoke test.
+        reason = str(e)
+        low = reason.lower()
+        if "10061" in low or "refused" in low:
+            reason = "connection refused (the wrapper is not running)"
+        elif "timed out" in low or "timeout" in low:
+            reason = "timed out"
+        return False, None, reason
 
 
 def wsl_available():

@@ -213,13 +213,17 @@ autoProxy=true
 ## 自检
 
 ```powershell
-.\scripts\smoke-test.ps1            # 全部检查
+.\scripts\smoke-test.bat            # 全部检查（推荐，绕过执行策略）
+.\scripts\smoke-test.ps1            # 同上，需允许运行 .ps1
 .\scripts\smoke-test.ps1 -SkipWsl   # 部署前只查 Python 侧
 ```
 
 10 项只读检查，覆盖历史上真实出过问题的地方：源码可解析、`common` 可导入、
 config 可读、临时目录能创建且**能彻底删除**、发行版存在、下载器与 MP4Box 可执行、
 凭据已缓存、wrapper 有应答。
+> `wrapper answers` 这一项在服务未运行时**会自动拉起服务**再判断 ——
+> 否则它只是在回答"此刻是否恰好在跑"，而没有回答"环境能不能用"。
+
 
 单项也可以单独跑，方便脚本化：
 
