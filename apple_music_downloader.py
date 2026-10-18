@@ -39,7 +39,15 @@ D = "\033[90m"
 
 
 def clear():
-    os.system("cls" if os.name == "nt" else "clear")
+    # Not os.system: that spawns a shell and inherits its parsing rules.
+    try:
+        if os.name == "nt":
+            subprocess.run(["cmd", "/c", "cls"], check=False,
+                           startupinfo=_SI, creationflags=_CF)
+        else:
+            subprocess.run(["clear"], check=False)
+    except Exception:
+        print("\033[2J\033[H", end="")
 
 
 def banner():

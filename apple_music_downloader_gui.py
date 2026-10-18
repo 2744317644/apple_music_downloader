@@ -2683,10 +2683,72 @@ class RenamePage(AppPage):
         self._format_entry.configure(state="readonly")
 
 
+_INSTANCE_MUTEX = None
+
+
+def _acquire_single_instance():
+    """Take a per-user named mutex. Returns False when one is already held.
+
+    Two instances fight over the same distro, ports and config: the second one
+    would try to start a service that is already up and its status panel would
+    flip between the two. A mutex is released automatically when the process
+    dies, unlike a lock file.
+    """
+    global _INSTANCE_MUTEX
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateMutexW.restype = wintypes.HANDLE
+        handle = kernel32.CreateMutexW(None, False, "Local\\AppleMusicDownloader")
+        if not handle:
+            return True  # cannot tell; better to run than to block the user
+        if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+            return False
+        _INSTANCE_MUTEX = handle
+        return True
+    except Exception:
+        return True
+
+
+def _warn_already_running():
+    """Tell the user another instance owns the wrapper.
+
+    A plain messagebox blocks forever when nobody can click it (scripts, tests),
+    so this window closes itself after a few seconds. AMDL_NO_DIALOG=1 skips the
+    UI entirely - useful for automation.
+    """
+    if (os.environ.get("AMDL_NO_DIALOG") or "").strip().lower() in ("1", "true", "yes"):
+        print("Apple Music Downloader is already running.")
+        return
+    try:
+        win = ctk.CTk()
+        win.title("Apple Music Downloader")
+        win.geometry("440x170")
+        win.resizable(False, False)
+        ctk.CTkLabel(
+            win,
+            text=("The app is already running.\n"
+                  "Only one instance can use the WSL wrapper at a time."),
+            font=ctk.CTkFont(size=13), justify="center",
+        ).pack(expand=True, padx=24, pady=(24, 8))
+        ctk.CTkButton(win, text="OK", width=110, command=win.destroy).pack(pady=(0, 18))
+        win.after(8000, win.destroy)
+        win.mainloop()
+    except Exception:
+        print("Apple Music Downloader is already running.")
+
+
 def main():
+    if not _acquire_single_instance():
+        _warn_already_running()
+        return 1
     app = AppleMusicApp()
     app.mainloop()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

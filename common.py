@@ -201,8 +201,10 @@ def ensure_config_schema(log_callback=None):
     backup = path + ".bak"
     try:
         shutil.copy2(path, backup)
-    except Exception:
-        pass
+    except Exception as e:
+        # Not fatal, but the user is about to have their config rewritten
+        # without a backup - say so instead of failing silently.
+        _log(f"[WARN] Could not back up the config to {backup}: {e}", log_callback)
 
     def pick(*keys):
         for k in keys:
@@ -472,7 +474,16 @@ def _clean(s):
 
 
 def _wsl(*args, timeout=60):
-    cmd = [_wsl_bin() or "wsl", "-d", resolve_wsl_distro(), "--"] + list(args)
+    """Run a command inside the distro.
+
+    `--exec` is essential, not cosmetic: with a bare `--`, WSL hands the command
+    to the default login shell first, which expands `$VAR` from the environment
+    before the inner shell ever runs. That silently turned
+    `A=1; echo "$A"` into `A=1; echo ""` and broke every shell-local variable
+    (a `BK=...; mv ... "$BK"` backup ended up moving to an empty path).
+    With `--exec` the binary is executed directly and quoting is preserved.
+    """
+    cmd = [_wsl_bin() or "wsl", "-d", resolve_wsl_distro(), "--exec"] + list(args)
     r = subprocess.run(cmd, capture_output=True, text=True,
                        encoding="utf-8", errors="replace",
                        timeout=timeout, env=_wsl_env(),
@@ -811,12 +822,16 @@ def _reset_login_state(log_callback=None):
     so signing in from that state looks like a no-op failure. The old state is
     kept under /tmp/wrapper-login-backup in case it is ever needed.
     """
+    # The backup path is computed here, not in the shell: relying on `BK=...`
+    # inside a `sh -c` string is fragile (WSL without --exec expanded the
+    # variable away and the credentials were deleted instead of moved).
+    backup = "/tmp/wrapper-login-backup/files-" + time.strftime("%Y%m%d-%H%M%S")
     try:
         r = _wsl("sh", "-c",
                  "mkdir -p /tmp/wrapper-login-backup && "
                  f"if [ -d {WRAPPER_BASE_DIR_ABS} ]; then "
-                 f"  mv {WRAPPER_BASE_DIR_ABS} /tmp/wrapper-login-backup/files-$(date +%Y%m%d-%H%M%S) "
-                 f"  2>/dev/null || rm -rf {WRAPPER_BASE_DIR_ABS}/*; "
+                 f"  mv {WRAPPER_BASE_DIR_ABS} {backup} 2>/dev/null "
+                 f"  || rm -rf {WRAPPER_BASE_DIR_ABS}/*; "
                  "fi; "
                  f"mkdir -p {WRAPPER_BASE_DIR_ABS} && "
                  f"ls -A {WRAPPER_BASE_DIR_ABS} | wc -l",
@@ -826,8 +841,190 @@ def _reset_login_state(log_callback=None):
                  log_callback)
         else:
             _log("[WARN] Could not fully clear the previous sign-in state.", log_callback)
+        r2 = _wsl("sh", "-c", f"test -d {backup} && echo YES || echo NO", timeout=30)
+        return backup if "YES" in (r2.stdout or "") else None
     except Exception as e:
         _log(f"[WARN] Could not clear the previous sign-in state: {e}", log_callback)
+        return None
+
+
+_LOGIN_LOG = "/var/log/wrapper-login.log"
+_LOGIN_RUNNER = "/tmp/wrapper-login.sh"
+_LOGIN_CRED = "/tmp/wrapper-login.cred"
+
+
+def _login_write_files(username, password):
+    """Write the launcher script and the credential file inside the distro.
+
+    Two quirks are handled here, both found by testing against the real binary:
+
+    1. The wrapper must not be the direct child of the wsl.exe session. When it
+       is, it prints up to credentialHandler and exits 0 without ever reporting
+       an auth error, which looks like a silent no-op failure.
+    2. Both files are written through stdin and the credentials are passed as
+       positional arguments to the inner `sh -c`. Building the script as a shell
+       string let the outer shell expand "$1"/"$2" into nothing, so the wrapper
+       received "-L ':'" and rejected it silently.
+    """
+    script = (
+        "#!/bin/bash\n"
+        f"U=$(sed -n 1p {_LOGIN_CRED} 2>/dev/null)\n"
+        f"P=$(sed -n 2p {_LOGIN_CRED} 2>/dev/null)\n"
+        f"rm -f {_LOGIN_CRED}\n"
+        f"rm -f {_LOGIN_LOG}\n"
+        "sh -c 'cd /opt/wrapper && exec ./wrapper -L \"$1:$2\" -F -H 0.0.0.0' "
+        f"_ \"$U\" \"$P\" > {_LOGIN_LOG} 2>&1\n"
+    )
+    _wsl_input(script, "sh", "-c",
+               f"cat > {_LOGIN_RUNNER} && chmod +x {_LOGIN_RUNNER}", timeout=30)
+    _wsl_input(f"{username}\n{password}\n", "sh", "-c",
+               f"cat > {_LOGIN_CRED} && chmod 600 {_LOGIN_CRED}", timeout=30)
+
+
+def _login_pump(log_path, printed, log_callback, limit=200):
+    """Echo log lines we have not printed yet. Returns (printed, log_text)."""
+    log = _tail_log(log_path, limit)
+    lines = [ln for ln in log.splitlines() if ln.strip()]
+    for line in lines[printed:]:
+        _log(line.strip(), log_callback)
+    return len(lines), log
+
+
+def _login_send_2fa(code, log_callback):
+    """Drop the verification code where the wrapper picks it up."""
+    try:
+        _wsl("sh", "-c",
+             f"mkdir -p {WRAPPER_BASE_DIR_ABS} && "
+             f"printf '%s' {_shquote(str(code).strip())} > "
+             f"{WRAPPER_BASE_DIR_ABS}/2fa.txt",
+             timeout=30)
+        return True
+    except Exception as e:
+        _log(f"[ERROR] Failed to deliver 2FA code: {e}", log_callback)
+        return False
+
+
+def _login_wait(proc, twofa_callback, log_callback, timeout):
+    """Watch the login run. Returns (state, printed, log).
+
+    state is "success", "timeout" or "exited".
+    """
+    printed = 0
+    twofa_sent = False
+    deadline = time.time() + timeout
+
+    while proc.poll() is None and time.time() < deadline:
+        time.sleep(2)
+        printed, log = _login_pump(_LOGIN_LOG, printed, log_callback)
+
+        # After a successful sign-in the wrapper does NOT exit - it keeps running
+        # and starts serving the ports. Waiting for the process to end always hit
+        # the timeout and reported a false "Login timed out" with credentials
+        # already cached.
+        if ("account info cached successfully" in log) or ("Music-Token:" in log):
+            return "success", printed, log
+
+        if twofa_callback and not twofa_sent:
+            if ("2FA: true" in log) or ("Enter your 2FA code" in log):
+                _log("Two-factor authentication required.", log_callback)
+                code = twofa_callback()
+                if code and str(code).strip():
+                    _log("Delivering 2FA code...", log_callback)
+                    twofa_sent = _login_send_2fa(code, log_callback)
+                else:
+                    _log("[WARN] No 2FA code provided", log_callback)
+
+    if proc.poll() is None:
+        return "timeout", printed, _tail_log(_LOGIN_LOG, 200)
+    printed, log = _login_pump(_LOGIN_LOG, printed, log_callback, limit=2000)
+    return "exited", printed, log
+
+
+def _login_explain(log, rc):
+    """Turn the wrapper's log into an actionable reason."""
+    low = (log or "").lower()
+    if "check the account information" in low:
+        return "Apple rejected the sign-in: check the Apple ID and password."
+    if "auth error" in low:
+        return "Apple returned an authentication error - see the log above."
+    if "2fa: true" in low or "verification code" in low:
+        return "Apple asked for two-factor verification, but it did not complete."
+    if rc is not None and rc >= 128:
+        return f"The wrapper crashed during sign-in (exit code {rc}). See the log above."
+    return "Login failed - check the log above for details."
+
+
+def _login_backup_has_token(backup):
+    """True when the backup we moved aside still holds a usable session."""
+    if not backup:
+        return False
+    try:
+        r = _wsl("sh", "-c", f"test -s {_shquote(backup)}/MUSIC_TOKEN && echo YES || echo NO",
+                 timeout=30)
+        return "YES" in (r.stdout or "")
+    except Exception:
+        return False
+
+
+def _restore_login_state(backup, log_callback=None):
+    """Put a previously working session back after a failed sign-in attempt.
+
+    Without this a single typo in the password signs the user out: the login
+    flow clears the account DB first, so the old credentials are only in the
+    backup taken moments earlier.
+    """
+    if not backup:
+        return False
+    try:
+        r = _wsl("sh", "-c",
+                 f"rm -rf {WRAPPER_BASE_DIR_ABS}/* 2>/dev/null; "
+                 f"cp -a {_shquote(backup)}/* {WRAPPER_BASE_DIR_ABS}/ 2>/dev/null && "
+                 f"chmod -R u+rw {WRAPPER_BASE_DIR_ABS} && "
+                 f"test -s {WRAPPER_BASE_DIR_ABS}/MUSIC_TOKEN && echo RESTORED",
+                 timeout=60)
+        ok = "RESTORED" in (r.stdout or "")
+        if ok:
+            _log("Restored the previous sign-in session.", log_callback)
+        return ok
+    except Exception as e:
+        _log(f"[WARN] Could not restore the previous session: {e}", log_callback)
+        return False
+
+def _login_token_cached():
+    try:
+        chk = _wsl("sh", "-c",
+                   f"test -s {WRAPPER_BASE_DIR_ABS}/MUSIC_TOKEN && echo YES || echo NO",
+                   timeout=30)
+        return "YES" in (chk.stdout or "")
+    except Exception as e:
+        _log(f"[WARN] Could not check the token: {e}")
+        return False
+
+
+def _login_dump_state(log_callback):
+    """Show what landed in the credential dir - invaluable when login fails."""
+    try:
+        state = _wsl("sh", "-c",
+                     f"ls -la {WRAPPER_BASE_DIR_ABS}/ 2>/dev/null; "
+                     f"echo '---mpl_db---'; "
+                     f"ls -la {WRAPPER_BASE_DIR_ABS}/mpl_db/ 2>/dev/null | head -6",
+                     timeout=30)
+    except Exception as e:
+        _log(f"[WARN] Could not inspect the credential dir: {e}", log_callback)
+        return
+    if state.stdout:
+        _log("[*] credential dir after login:", log_callback)
+        for ln in state.stdout.splitlines():
+            if ln.strip():
+                _log("    " + ln.strip(), log_callback)
+
+
+def _stop_login_instance(proc):
+    try:
+        proc.kill()
+        proc.wait(timeout=10)
+    except Exception:
+        pass
 
 
 def wrapper_login(username, password, log_callback=None, twofa_callback=None,
@@ -838,54 +1035,23 @@ def wrapper_login(username, password, log_callback=None, twofa_callback=None,
     The 2FA code is delivered via `<base>/2fa.txt`.
     """
     if not wsl_distro_present():
-        return False, f"WSL distro '{WSL_DISTRO}' not found"
+        return False, f"WSL distro '{resolve_wsl_distro()}' not found"
 
     _log("Stopping the wrapper service for a one-off login run...", log_callback)
     try:
         _wsl("systemctl", "stop", WSL_SERVICE, timeout=60)
-    except Exception:
-        pass
+    except Exception as e:
+        _log(f"[WARN] Could not stop the service: {e}", log_callback)
 
-    _reset_login_state(log_callback)
+    login_backup = _reset_login_state(log_callback)
 
-    log_path = "/var/log/wrapper-login.log"
-    runner = "/tmp/wrapper-login.sh"
-    cred_file = "/tmp/wrapper-login.cred"
-
-    # Two quirks are handled here, both found by testing against the real binary:
-    #
-    # 1. The wrapper must not be the direct child of the wsl.exe session. When
-    #    it is, it prints up to credentialHandler and exits 0 without ever
-    #    reporting an auth error - login looks like a silent no-op.
-    # 2. Credentials travel as positional arguments to the inner `sh -c`, not
-    #    through a shell string, so no password character can break the quoting.
-    script = (
-        "#!/bin/bash\n"
-        f"U=$(sed -n 1p {cred_file} 2>/dev/null)\n"
-        f"P=$(sed -n 2p {cred_file} 2>/dev/null)\n"
-        f"rm -f {cred_file}\n"
-        f"rm -f {log_path}\n"
-        "sh -c 'cd /opt/wrapper && exec ./wrapper -L \"$1:$2\" -F -H 0.0.0.0' "
-        f"_ \"$U\" \"$P\" > {log_path} 2>&1\n"
-    )
     try:
-        # Both files are written through stdin. Building them as shell strings
-        # broke on quoting: the embedded single quotes ended the outer quoted
-        # region, so "$1"/"$2" were expanded by the outer shell and the wrapper
-        # received "-L ':'" - empty credentials, which it rejects by exiting
-        # silently right after credentialHandler.
-        _wsl_input(script, "sh", "-c", f"cat > {runner} && chmod +x {runner}", timeout=30)
-        _wsl_input(f"{username}\n{password}\n", "sh", "-c",
-                   f"cat > {cred_file} && chmod 600 {cred_file}", timeout=30)
+        _login_write_files(username, password)
     except Exception as e:
         _restart_service(log_callback)
         return False, f"Failed to prepare the login script: {e}"
 
-    cmd = [
-        _wsl_bin() or "wsl", "-d", WSL_DISTRO, "--",
-        "bash", runner,
-    ]
-
+    cmd = [_wsl_bin() or "wsl", "-d", resolve_wsl_distro(), "--", "bash", _LOGIN_RUNNER]
     _log("Launching wrapper login (this may take ~30s)...", log_callback)
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
@@ -895,72 +1061,23 @@ def wrapper_login(username, password, log_callback=None, twofa_callback=None,
         _restart_service(log_callback)
         return False, f"Failed to start login: {e}"
 
-    printed = 0
-    twofa_sent = False
-    success = False
-    deadline = time.time() + timeout
+    state, _printed, log = _login_wait(proc, twofa_callback, log_callback, timeout)
 
-    while proc.poll() is None and time.time() < deadline:
-        time.sleep(2)
-        log = _tail_log(log_path, 200)
-        lines = [ln for ln in log.splitlines() if ln.strip()]
-        for line in lines[printed:]:
-            _log(line.strip(), log_callback)
-        printed = len(lines)
-
-        # After a successful sign-in the wrapper does NOT exit - it keeps
-        # running and starts serving the decrypt/account ports. Waiting for the
-        # process to end therefore always hit the timeout and reported a false
-        # "Login timed out" even though the credentials were already cached.
-        if ("account info cached successfully" in log) or ("Music-Token:" in log):
-            success = True
-            break
-
-        if twofa_callback and not twofa_sent:
-            if ("2FA: true" in log) or ("Enter your 2FA code" in log):
-                _log("Two-factor authentication required.", log_callback)
-                code = twofa_callback()
-                if code and str(code).strip():
-                    _log("Delivering 2FA code...", log_callback)
-                    try:
-                        _wsl("sh", "-c",
-                             f"mkdir -p {WRAPPER_BASE_DIR_ABS} && "
-                             f"printf '%s' {_shquote(str(code).strip())} > "
-                             f"{WRAPPER_BASE_DIR_ABS}/2fa.txt",
-                             timeout=30)
-                        twofa_sent = True
-                    except Exception as e:
-                        _log(f"[ERROR] Failed to deliver 2FA code: {e}", log_callback)
-                else:
-                    _log("[WARN] No 2FA code provided", log_callback)
-
-    if success:
-        # This ad-hoc instance is already listening on the wrapper ports; stop
-        # it and let the managed systemd unit take over.
-        try:
-            proc.kill()
-            proc.wait(timeout=10)
-        except Exception:
-            pass
+    if state == "success":
+        # This ad-hoc instance already listens on the wrapper ports; stop it and
+        # let the managed systemd unit take over.
+        _stop_login_instance(proc)
         _restart_service(log_callback)
         return True, "Login successful. Credentials cached."
 
-    if proc.poll() is None:
-        try:
-            proc.kill()
-        except Exception:
-            pass
+    if state == "timeout":
+        _stop_login_instance(proc)
         _log("[ERROR] Login timed out", log_callback)
         _restart_service(log_callback)
         return False, "Login timed out"
 
-    log = _tail_log(log_path, 2000)
-    lines = [ln for ln in log.splitlines() if ln.strip()]
-    for line in lines[printed:]:
-        _log(line.strip(), log_callback)
-
-    # Exit code is genuinely diagnostic here: a wrong password prints an auth
-    # error, while a crash (>=128, e.g. 139 = SIGSEGV) prints nothing at all.
+    # Exit code is diagnostic: a wrong password prints an auth error, a crash
+    # (>=128, e.g. 139 = SIGSEGV) prints nothing at all.
     rc = proc.returncode
     if rc is not None and rc >= 128:
         _log(f"[ERROR] The wrapper crashed during login (exit code {rc}, "
@@ -970,47 +1087,21 @@ def wrapper_login(username, password, log_callback=None, twofa_callback=None,
     else:
         _log(f"[*] wrapper exit code: {rc}", log_callback)
 
-    tok_ok = False
-    try:
-        chk = _wsl("sh", "-c",
-                   f"test -s {WRAPPER_BASE_DIR_ABS}/MUSIC_TOKEN && echo YES || echo NO",
-                   timeout=30)
-        tok_ok = "YES" in (chk.stdout or "")
-    except Exception:
-        pass
-
+    tok_ok = _login_token_cached()
     if not tok_ok:
-        try:
-            state = _wsl("sh", "-c",
-                         f"ls -la {WRAPPER_BASE_DIR_ABS}/ 2>/dev/null; "
-                         f"echo '---mpl_db---'; "
-                         f"ls -la {WRAPPER_BASE_DIR_ABS}/mpl_db/ 2>/dev/null | head -6",
-                         timeout=30)
-            if state.stdout:
-                _log("[*] credential dir after login:", log_callback)
-                for ln in state.stdout.splitlines():
-                    if ln.strip():
-                        _log("    " + ln.strip(), log_callback)
-        except Exception:
-            pass
+        _login_dump_state(log_callback)
 
     _restart_service(log_callback)
-
     if tok_ok:
         return True, "Login successful. Credentials cached."
 
-    # Turn the log into an actionable reason instead of a generic failure.
-    low = (log or "").lower()
-    if "check the account information" in low:
-        return False, "Apple rejected the sign-in: check the Apple ID and password."
-    if "auth error" in low:
-        return False, "Apple returned an authentication error - see the log above."
-    if "2fa: true" in low or "verification code" in low:
-        return False, "Apple asked for two-factor verification, but it did not complete."
-    if rc is not None and rc >= 128:
-        return False, (f"The wrapper crashed during sign-in (exit code {rc}). "
-                       f"See the log above.")
-    return False, "Login failed - check the log above for details."
+    reason = _login_explain(log, rc)
+    # A typo must not sign the user out: the flow cleared their account DB, so
+    # put back the session that was working moments ago.
+    if _login_backup_has_token(login_backup) and _restore_login_state(login_backup, log_callback):
+        _restart_service(log_callback)
+        reason += " Your previous session has been restored."
+    return False, reason
 
 
 # =====================================================================

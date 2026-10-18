@@ -32,7 +32,7 @@ echo.
 
 REM ---- Check pip packages ----
 echo [2/4] Installing Python packages...
-python -m pip install -r "%ROOT%\requirements.txt" --quiet
+python -m pip install -r "%ROOT%\requirements.txt" -r "%ROOT%\requirements-dev.txt" --quiet
 echo OK.
 echo.
 
