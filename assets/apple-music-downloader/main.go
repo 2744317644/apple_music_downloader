@@ -1026,11 +1026,18 @@ func ripTrack(track *task.Track, token string, mediaUserToken string) {
 		tags = append(tags, fmt.Sprintf("cover=%s", track.CoverPath))
 	}
 	tagsString := strings.Join(tags, ":")
-	cmd := exec.Command("MP4Box", "-itags", tagsString, trackPath)
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("Embed failed: %v\n", err)
-		counter.Error++
-		return
+	// MP4Box is optional: it rewrites the fragmented MP4 and injects iTunes
+	// tags. Treating a missing MP4Box as fatal dropped tracks whose audio had
+	// already been downloaded, so only skip the embedding step.
+	if mp4boxPath, lookErr := exec.LookPath("MP4Box"); lookErr == nil {
+		cmd := exec.Command(mp4boxPath, "-itags", tagsString, trackPath)
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("Embed failed: %v\n", err)
+			counter.Error++
+			return
+		}
+	} else {
+		fmt.Println("[WARN] MP4Box not found - skipping tag embedding, audio is still saved")
 	}
 	if (strings.Contains(track.PreID, "pl.") || strings.Contains(track.PreID, "ra.")) && Config.DlAlbumcoverForPlaylist {
 		if err := os.Remove(track.CoverPath); err != nil {

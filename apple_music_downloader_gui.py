@@ -1,41 +1,77 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Apple Music ALAC Downloader - GUI
-Requires: Python 3.7+, Docker, customtkinter
+
+Requires: Python 3.7+, customtkinter and WSL2 (wrapper + downloader)
 """
 
 import os
+import re
 import sys
+import json
 import time
-import shutil
 import queue
 import atexit
 import tempfile
 import threading
 import subprocess
 import ctypes
+import webbrowser
 from datetime import datetime
 import customtkinter as ctk
 from PIL import Image, ImageDraw
 
+
+# ---- font cache -----------------------------------------------------------
+# Every widget used to build its own CTkFont, and each one allocates a Tk font.
+# The UI asks for the same handful of size/weight pairs ~69 times, so cache
+# them by constructor arguments: startup drops from ~1.8s to ~0.4s. Fonts are
+# shared resources in Tk and nothing here mutates one after creation.
+_CTkFont_orig = ctk.CTkFont
+_ctkfont_cache = {}
+
+
+def _cached_ctkfont(*args, **kwargs):
+    key = (args, tuple(sorted(kwargs.items())))
+    font = _ctkfont_cache.get(key)
+    if font is None:
+        font = _CTkFont_orig(*args, **kwargs)
+        _ctkfont_cache[key] = font
+    return font
+
+
+ctk.CTkFont = _cached_ctkfont
+
 from common import (
     SCRIPT_DIR, DATA_DIR, DOWNLOAD_DIR, CONFIG_FILE,
-    APP_DATA_DIR, WRAPPER_SRC, WRAPPER_IMAGE, WRAPPER_NAME, WRAPPER_DATA_DIR,
-    DECRYPT_PORT, M3U8_PORT, ACCOUNT_PORT, DL_SRC, DL_IMAGE, MIRROR_PROFILES,
-    get_config_path, load_config_content, get_download_folder,
-    wrapper_running, load_images_from_dir, export_images,
-    build_wrapper_image, build_downloader_image,
+    APP_DATA_DIR, WRAPPER_HOST, DECRYPT_PORT, M3U8_PORT, ACCOUNT_PORT, WSL_DISTRO,
+    get_config_path, load_config_content, get_download_folder, get_save_folder,
+    find_tool, get_downloader_exe, downloader_env,
+    prepare_run_config, cleanup_run_config, build_downloader_command,
+    find_media_user_token, validate_media_user_token, save_media_user_token,
+    wrapper_running, wrapper_status, wrapper_service_state, wsl_diagnose,
+    wrapper_health_after_run, port_open,
+    start_wrapper_service, restart_wrapper_service, stop_wrapper,
+    shutdown_wsl, shutdown_wsl_detached, shutdown_wsl_on_exit_enabled,
+    login_cached,
     wrapper_login as _common_wrapper_login,
-    do_start_wrapper as _common_do_start_wrapper,
-    stop_wrapper, prepare_config_for_docker,
     _SI, _CF,
 )
 
-FLAC_EXE = os.environ.get("FLAC_EXE", os.path.join(DATA_DIR, "assets", "flac.exe"))
+WRAPPER_ENDPOINT = f"{WRAPPER_HOST}:{DECRYPT_PORT}/{M3U8_PORT}/{ACCOUNT_PORT}"
 
 
 FONT_FAMILY = "Microsoft YaHei"
 MONO_FAMILY = "Consolas"
 APP_ICON = os.path.join(DATA_DIR, "assets", "app_icon.ico")
+
+if os.name == "nt":
+    class _RECT(ctypes.Structure):
+        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                    ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+    class _MONITORINFO(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.c_ulong), ("rcMonitor", _RECT),
+                    ("rcWork", _RECT), ("dwFlags", ctypes.c_ulong)]
 
 LOG_DIR = os.path.join(APP_DATA_DIR, "log")
 
@@ -101,12 +137,10 @@ I18N = {
         "product": "ALAC Downloader",
         "checking": "正在检测环境...",
         "retry": "重试",
-        "start_docker": "启动 Docker",
-        "docker_not_running": "Docker 未运行，请先启动 Docker Desktop，然后点击重试",
-        "select_mirror_title": "选择镜像源",
-        "select_mirror_msg": "选择构建镜像时使用的镜像源：\n\n国内镜像：DaoCloud + 清华 apt（国内推荐）\n国际源：Docker Hub + 默认 apt（海外推荐）",
-        "mirror_cn": "国内镜像",
-        "mirror_intl": "国际源",
+        "start_service": "启动服务",
+        "wrapper_not_ready": "wrapper 未就绪",
+        "wrapper_hint": "wrapper 运行在 WSL2 发行版 {distro} 中，地址 {url}。\\n可点击「重试」或到「状态」页签重启服务。",
+        "downloader_missing": "未找到 WSL 内的下载器 /opt/amdl-legacy/amdl",
         "sign_in": "登录",
         "tips_login": "登录一次即可缓存凭据，无需重复输入",
         "apple_id": "Apple ID",
@@ -134,23 +168,35 @@ I18N = {
         "config_not_found": "未找到配置文件",
         "config_saved": "已保存到: {path}",
         "config_save_failed": "保存失败: {error}",
+        "get_token": "获取 Token",
+        "token_searching": "正在查找 media-user-token…",
+        "token_found": "已自动获取并保存（来源: {source}，{detail}）",
+        "token_not_found": "未能自动获取，请按提示手动复制",
+        "token_dialog_title": "获取 media-user-token",
+        "token_howto": "这个 token 只能从浏览器读取：\n1. 浏览器登录 https://music.apple.com\n2. 按 F12 打开开发者工具\n3. Application（应用）→ Storage → Cookies → https://music.apple.com\n4. 找到名为 media-user-token 的条目，复制它的 Value（整串）\n5. 粘贴到下面输入框，点击「校验并保存」\n\n（下面的文字可以选中复制）",
+        "token_open_browser": "打开 music.apple.com",
+        "token_copy_url": "复制网址",
+        "token_copied": "网址已复制到剪贴板",
+        "token_placeholder": "在此粘贴 media-user-token 的值…",
+        "token_empty": "请先粘贴 token",
+        "token_checking": "正在向 Apple 校验…",
+        "token_verify_save": "校验并保存",
+        "token_cancel": "取消",
+        "token_saved": "已校验通过并保存（{detail}）",
         "status_title": "系统状态",
         "status_refresh": "刷新",
-        "s_docker": "Docker",
-        "s_images": "镜像",
-        "s_wrapper": "Wrapper 容器",
+        "s_wrapper": "Wrapper 服务",
+        "wrapper_endpoint": "接口地址",
+        "wrapper_service": "WSL 服务状态",
+        "wrapper_storefront": "账号区域",
         "s_login": "登录",
         "s_paths": "路径",
-        "docker_installed": "Docker 已安装",
-        "docker_running": "Docker 守护进程",
-        "wrapper_image": "Wrapper 镜像",
-        "dl_image": "下载器镜像",
-        "wrapper_container": "容器运行状态",
-        "wrapper_ports": "端口映射",
+        "wrapper_container": "运行状态",
+        "wrapper_ports": "监听端口",
         "login_cached": "凭据缓存",
         "config_path_label": "配置文件",
         "log_path_label": "日志目录",
-        "wrapper_data_path_label": "Wrapper 数据",
+        "downloader_path_label": "下载器",
         "not_installed": "未安装",
         "running": "运行中",
         "not_running": "未运行",
@@ -164,12 +210,11 @@ I18N = {
         "mode_playlist": "播放列表",
         "mode_atmos": "杜比全景声",
         "mode_aac": "AAC",
-        "use_local_image_title": "本地镜像",
-        "use_local_image_msg": "检测到需要构建 Docker 镜像。\n\n是否使用本地 .tar 镜像文件导入？\n\n选择「是」将打开目录选择器，\n选择「否」将从源码构建镜像。",
-        "select_image_dir_title": "选择镜像目录",
-        "export_images": "导出镜像",
-        "export_done": "导出完成",
-        "export_failed": "导出失败",
+        "mode_select": "交互选择",
+        "mode_debug": "调试 / 查看质量",
+        "mode_search": "搜索",
+        "mode_artist": "歌手全部专辑",
+        "search_type": "搜索类型:",
         "wrapper_restart": "重启 Wrapper",
         "wrapper_restarting": "重启中...",
         "tab_convert": "转换",
@@ -200,6 +245,7 @@ I18N = {
         "rename_failed": "失败: {file}",
         "rename_complete": "重命名完毕，共处理 {total} 个文件",
         "rename_no_tag": "跳过(缺少标签): {file}",
+        "rename_no_tool": "未找到 ffprobe，无法读取标签（请将 ffprobe.exe 放入 assets 目录或加入 PATH）",
         "rename_tpl_track": "编号. 音乐名",
         "rename_tpl_artist": "歌手 - 音乐名",
     },
@@ -209,12 +255,10 @@ I18N = {
         "product": "ALAC Downloader",
         "checking": "Checking environment...",
         "retry": "Retry",
-        "start_docker": "Start Docker",
-        "docker_not_running": "Docker is not running. Please start Docker Desktop, then click Retry",
-        "select_mirror_title": "Select Mirror Source",
-        "select_mirror_msg": "Select the mirror source for building images:\n\nChina Mirror: DaoCloud + Tsinghua apt (recommended for China)\nInternational: Docker Hub + default apt (recommended for overseas)",
-        "mirror_cn": "China Mirror",
-        "mirror_intl": "International",
+        "start_service": "Start Service",
+        "wrapper_not_ready": "wrapper is not ready",
+        "wrapper_hint": "wrapper runs inside the WSL2 distro {distro} at {url}.\\nClick Retry, or restart the service from the Status tab.",
+        "downloader_missing": "Downloader not found at /opt/amdl-legacy/amdl inside WSL",
         "sign_in": "Sign In",
         "tips_login": "Login once to cache credentials, no need to re-enter",
         "apple_id": "Apple ID",
@@ -242,23 +286,35 @@ I18N = {
         "config_not_found": "Config file not found",
         "config_saved": "Saved to: {path}",
         "config_save_failed": "Save failed: {error}",
+        "get_token": "Get Token",
+        "token_searching": "Looking for media-user-token…",
+        "token_found": "Auto-detected and saved (source: {source}, {detail})",
+        "token_not_found": "Could not auto-detect - copy it manually",
+        "token_dialog_title": "Get media-user-token",
+        "token_howto": "This token can only be read from a browser:\n1. Sign in to https://music.apple.com\n2. Press F12 to open developer tools\n3. Application -> Storage -> Cookies -> https://music.apple.com\n4. Find the entry named media-user-token and copy its Value\n5. Paste it below and click Verify & Save\n\n(the text below is selectable)",
+        "token_open_browser": "Open music.apple.com",
+        "token_copy_url": "Copy URL",
+        "token_copied": "URL copied to clipboard",
+        "token_placeholder": "Paste the media-user-token value here…",
+        "token_empty": "Paste a token first",
+        "token_checking": "Verifying with Apple…",
+        "token_verify_save": "Verify & Save",
+        "token_cancel": "Cancel",
+        "token_saved": "Verified and saved ({detail})",
         "status_title": "System Status",
         "status_refresh": "Refresh",
-        "s_docker": "Docker",
-        "s_images": "Images",
-        "s_wrapper": "Wrapper Container",
+        "s_wrapper": "Wrapper Service",
+        "wrapper_endpoint": "Endpoint",
+        "wrapper_service": "WSL Service",
+        "wrapper_storefront": "Storefront",
         "s_login": "Login",
         "s_paths": "Paths",
-        "docker_installed": "Docker Installed",
-        "docker_running": "Docker Daemon",
-        "wrapper_image": "Wrapper Image",
-        "dl_image": "Downloader Image",
-        "wrapper_container": "Container Status",
-        "wrapper_ports": "Port Mapping",
+        "wrapper_container": "Status",
+        "wrapper_ports": "Listening Ports",
         "login_cached": "Cached Credentials",
         "config_path_label": "Config File",
         "log_path_label": "Log Directory",
-        "wrapper_data_path_label": "Wrapper Data",
+        "downloader_path_label": "Downloader",
         "not_installed": "Not Installed",
         "running": "Running",
         "not_running": "Not Running",
@@ -272,12 +328,11 @@ I18N = {
         "mode_playlist": "Playlist",
         "mode_atmos": "Dolby Atmos",
         "mode_aac": "AAC",
-        "use_local_image_title": "Local Image",
-        "use_local_image_msg": "Docker images need to be built.\n\nUse local .tar image files instead?\n\nClick 'Yes' to select a directory,\nclick 'No' to build from source.",
-        "select_image_dir_title": "Select Image Directory",
-        "export_images": "Export Images",
-        "export_done": "Export Done",
-        "export_failed": "Export Failed",
+        "mode_select": "Interactive Select",
+        "mode_debug": "Debug / View Quality",
+        "mode_search": "Search",
+        "mode_artist": "All Artist Albums",
+        "search_type": "Search type:",
         "wrapper_restart": "Restart Wrapper",
         "wrapper_restarting": "Restarting...",
         "tab_convert": "Convert",
@@ -308,6 +363,7 @@ I18N = {
         "rename_failed": "Failed: {file}",
         "rename_complete": "Rename complete, total {total} files",
         "rename_no_tag": "Skip (missing tag): {file}",
+        "rename_no_tool": "ffprobe not found, cannot read tags (put ffprobe.exe in assets/ or add it to PATH)",
         "rename_tpl_track": "TrackNumber. SongName",
         "rename_tpl_artist": "Artist - SongName",
     },
@@ -316,27 +372,14 @@ I18N = {
 DEFAULT_LANG = "zh"
 
 
-def _run(*args, capture=True, silent=True, check=False):
-    try:
-        r = subprocess.run(list(args), capture_output=capture, text=True,
-                           encoding="utf-8", errors="replace", check=check,
-                           startupinfo=_SI, creationflags=_CF)
-        return r.stdout.strip()
-    except Exception:
-        return ""
-
-
-def _live(*args):
-    return subprocess.run(list(args), check=False,
-                          startupinfo=_SI, creationflags=_CF).returncode
-
-
 def wrapper_login(username, password, log_callback=None, twofa_callback=None):
     return _common_wrapper_login(username, password, log_callback=log_callback, twofa_callback=twofa_callback)
 
 
 def do_start_wrapper(log_callback=None):
-    return _common_do_start_wrapper(log_callback=log_callback)
+    if wrapper_running():
+        return True, f"wrapper already running ({WRAPPER_ENDPOINT})"
+    return start_wrapper_service(log_callback=log_callback)
 
 
 def _make_close(size=16, color="#86868B"):
@@ -357,6 +400,17 @@ def _make_folder(size=16, color="#86868B"):
     draw.rectangle([2, tab_h, 2 + tab_w, tab_h + 2], fill=color)
     draw.rectangle([2, tab_h + 2, size - 2, size - 2], fill=color)
     return ctk.CTkImage(img, size=(size, size))
+
+
+_ILLEGAL_FS_CHARS = '<>:"/\\|?*'
+
+
+def _sanitize_filename(base):
+    """Strip characters Windows rejects in filenames; keep the name non-empty."""
+    cleaned = "".join("_" if ch in _ILLEGAL_FS_CHARS or ord(ch) < 32 else ch
+                      for ch in base)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip().rstrip(". ")
+    return cleaned or "untitled"
 
 
 # =====================================================================
@@ -394,17 +448,48 @@ class AppleMusicApp(ctk.CTk):
         self.container.pack(fill="both", expand=True)
 
         self.frames = {}
-        for F in (SetupPage, LoginPage, TabbedContainer):
-            frame = F(self.container, self)
-            self.frames[F.__name__] = frame
-            frame.place(relx=0, rely=0, relwidth=1, relheight=1)
-
+        self._frame_classes = {
+            "SetupPage": SetupPage,
+            "LoginPage": LoginPage,
+            "TabbedContainer": TabbedContainer,
+        }
         self.show_frame("SetupPage")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         os.makedirs(APP_DATA_DIR, exist_ok=True)
         get_config_path()
 
         self._make_layered_window()
+        self._center_window()
+
+    def _center_window(self):
+        if os.name != "nt":
+            self.update_idletasks()
+            w = self.winfo_width()
+            h = self.winfo_height()
+            x = max(0, (self.winfo_screenwidth() - w) // 2)
+            y = max(0, (self.winfo_screenheight() - h) // 2)
+            self.geometry(f"+{x}+{y}")
+            return
+        try:
+            self.update_idletasks()
+            user32 = ctypes.windll.user32
+            hwnd = user32.GetAncestor(self.winfo_id(), 2)  # GA_ROOT
+            rect = _RECT()
+            user32.GetWindowRect(hwnd, ctypes.byref(rect))
+            w = rect.right - rect.left
+            h = rect.bottom - rect.top
+            monitor = user32.MonitorFromWindow(hwnd, 2)  # MONITOR_DEFAULTTONEAREST
+            mi = _MONITORINFO()
+            mi.cbSize = ctypes.sizeof(_MONITORINFO)
+            user32.GetMonitorInfoW(monitor, ctypes.byref(mi))
+            wk = mi.rcWork
+            x = wk.left + max(0, (wk.right - wk.left - w) // 2)
+            y = wk.top + max(0, (wk.bottom - wk.top - h) // 2)
+            SWP_NOSIZE = 0x0001
+            SWP_NOZORDER = 0x0004
+            user32.SetWindowPos(hwnd, 0, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER)
+        except Exception:
+            pass
 
     def _make_layered_window(self):
         """Make window WS_EX_LAYERED so DWM composites it, skipping GDI WM_ERASEBKGND."""
@@ -440,12 +525,29 @@ class AppleMusicApp(ctk.CTk):
                 frame.refresh_language()
 
     def _on_close(self):
-        stop_wrapper()
+        # Destroy the window first so closing feels instant, then hand the WSL
+        # shutdown to a detached process. Doing it inline used to block the exit
+        # for several seconds (systemctl stop + wsl --shutdown).
         session_log.close()
         self.destroy()
+        try:
+            if shutdown_wsl_on_exit_enabled():
+                if not shutdown_wsl_detached():
+                    threading.Thread(target=shutdown_wsl, daemon=True).start()
+            else:
+                threading.Thread(target=stop_wrapper, daemon=True).start()
+        except Exception:
+            pass
 
     def show_frame(self, name):
-        frame = self.frames[name]
+        # Pages are built on first use: constructing every page up front (the
+        # download/config/status/convert/rename tree is several hundred CTk
+        # widgets) made the window take seconds to appear.
+        frame = self.frames.get(name)
+        if frame is None:
+            frame = self._frame_classes[name](self.container, self)
+            frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+            self.frames[name] = frame
         frame.tkraise()
         if hasattr(frame, "on_show"):
             frame.on_show()
@@ -551,141 +653,75 @@ class SetupPage(AppPage):
         if not self.app.setup_done:
             self.start_setup()
 
+    def _ui(self, fn, *args):
+        """Run a widget update on the Tk main thread.
+
+        The setup steps run on a worker thread, and Tk is not thread-safe:
+        touching widgets from there raised "main thread is not in main loop"
+        and made the window stutter.
+        """
+        try:
+            if threading.current_thread() is threading.main_thread():
+                fn(*args)
+            else:
+                self.after(0, lambda: fn(*args))
+        except Exception:
+            pass
+
     def log(self, msg):
         session_log.write(msg)
-        if self.log_text:
-            self.log_text.insert("end", msg + "\n")
-            self.log_text.see("end")
+        self._ui(self._append_log, msg)
+
+    def _append_log(self, msg):
+        try:
+            if self.log_text and self.log_text.winfo_exists():
+                self.log_text.insert("end", msg + "\n")
+                self.log_text.see("end")
+        except Exception:
+            pass
 
     def set_status(self, msg):
-        if self.status_label:
-            self.status_label.configure(text=msg)
+        self._ui(self._apply_status, msg)
+
+    def _apply_status(self, msg):
+        try:
+            if self.status_label and self.status_label.winfo_exists():
+                self.status_label.configure(text=msg)
+        except Exception:
+            pass
 
     def set_progress(self, val):
-        if self.progress:
-            self.progress.set(val)
+        self._ui(self._apply_progress, val)
+
+    def _apply_progress(self, val):
+        try:
+            if self.progress and self.progress.winfo_exists():
+                self.progress.set(val)
+        except Exception:
+            pass
 
     def start_setup(self):
         self.log_text.delete("1.0", "end")
         self.set_progress(0)
         self.retry_btn.pack_forget()
 
-        if subprocess.call(["docker", "info"],
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL,
-                           startupinfo=_SI, creationflags=_CF) != 0:
-            self.log(self.t("docker_not_running"))
-            self.set_status(self.t("docker_not_running"))
+        exe = get_downloader_exe()
+        if not exe:
+            msg = self.t("downloader_missing")
+            self.log(f"[ERROR] {msg}")
+            self.set_status(msg)
             self.retry_btn.pack(pady=8)
             return
 
-        self.log("Docker OK")
-        self._continue_setup()
-
-    def _continue_setup(self):
-        need_wrapper = not _run("docker", "images", "-q", WRAPPER_IMAGE, silent=True)
-        need_downloader = not _run("docker", "images", "-q", DL_IMAGE, silent=True)
-
-        if not (need_wrapper or need_downloader):
-            threading.Thread(target=self._run_setup_steps, daemon=True).start()
-            return
-
-        self.after(200, self._prompt_local_image)
-
-    def _prompt_local_image(self):
-        from tkinter import messagebox
-        answer = messagebox.askyesno(
-            self.t("use_local_image_title"),
-            self.t("use_local_image_msg")
-        )
-        if answer:
-            from tkinter import filedialog
-            image_dir = filedialog.askdirectory(
-                title=self.t("select_image_dir_title")
-            )
-            if image_dir:
-                self.log(f"Loading images from: {image_dir}")
-                self.set_status("Loading local Docker images...")
-                threading.Thread(target=self._load_images_and_setup, args=(image_dir,), daemon=True).start()
-                return
-
-        # User said no or cancelled - proceed with normal setup
-        threading.Thread(target=self._run_setup, daemon=True).start()
-
-    def _load_images_and_setup(self, image_dir):
-        load_images_from_dir(image_dir, self.log)
-        self.after(0, lambda: self.set_status("Image loading done, starting checks..."))
-        self._run_setup_steps()
-
-    def _run_setup(self):
-        self.after(0, self._ask_mirror)
-        return
-
-    def _ask_mirror(self):
-        c = self.app.colors
-        f = FONT_FAMILY
-
-        dlg = ctk.CTkToplevel(self)
-        dlg.title(self.t("select_mirror_title"))
-        dlg.geometry("380x200")
-        dlg.resizable(False, False)
-        dlg.transient(self)
-        dlg.grab_set()
-
-        dlg.update_idletasks()
-        main_x = self.winfo_rootx()
-        main_y = self.winfo_rooty()
-        main_w = self.winfo_width()
-        main_h = self.winfo_height()
-        dlg_w = dlg.winfo_width()
-        dlg_h = dlg.winfo_height()
-        x = main_x + (main_w - dlg_w) // 2
-        y = main_y + (main_h - dlg_h) // 2
-        dlg.geometry(f"+{x}+{y}")
-
-        lbl = ctk.CTkLabel(dlg, text=self.t("select_mirror_msg"),
-                           font=ctk.CTkFont(family=f, size=13),
-                           text_color=c["text"], wraplength=340, justify="center")
-        lbl.pack(pady=(24, 16), padx=20)
-
-        result = [None]
-
-        def _pick(val):
-            result[0] = val
-            dlg.destroy()
-
-        btn_row = ctk.CTkFrame(dlg, fg_color="transparent")
-        btn_row.pack(pady=8)
-
-        cn = MIRROR_PROFILES["cn"]
-        intl = MIRROR_PROFILES["intl"]
-
-        ctk.CTkButton(btn_row, text=f"{cn['label']}\n{cn['registry']}",
-                      width=160, height=50, corner_radius=8,
-                      fg_color=c["primary"], hover_color=c["primary_hover"],
-                      text_color="white",
-                      font=ctk.CTkFont(family=f, size=12),
-                      command=lambda: _pick("cn")).pack(side="left", padx=6)
-
-        ctk.CTkButton(btn_row, text=f"{intl['label']}\n{intl['registry']}",
-                      width=160, height=50, corner_radius=8,
-                      fg_color=c["input_bg"], hover_color=c["divider"],
-                      text_color=c["text"],
-                      font=ctk.CTkFont(family=f, size=12),
-                      command=lambda: _pick("intl")).pack(side="left", padx=6)
-
-        dlg.protocol("WM_DELETE_WINDOW", lambda: _pick("cn"))
-        dlg.wait_window()
-
-        self._mirror_profile = result[0] or "cn"
-        self.log(f"Mirror: {MIRROR_PROFILES[self._mirror_profile]['label']}")
+        self.log(f"[OK] Downloader: {exe}")
+        self.set_progress(0.25)
         threading.Thread(target=self._run_setup_steps, daemon=True).start()
 
     def _run_setup_steps(self):
         steps = [
-            ("Build Wrapper Image", self._check_wrapper),
-            ("Build Downloader Image", self._check_downloader),
-            ("Start Wrapper", self._start_wrapper),
+            ("Check downloader", self._check_downloader),
+            ("Check WSL distro", self._check_wsl),
+            ("Start wrapper", self._start_wrapper),
         ]
         total = len(steps)
         for i, (name, fn) in enumerate(steps):
@@ -703,7 +739,7 @@ class SetupPage(AppPage):
                 self.set_status(f"ERROR: {name}")
                 self.after(0, lambda: self.retry_btn.pack(pady=8))
                 return
-            self.set_progress((i + 1) / total)
+            self.set_progress(0.25 + 0.25 * (i + 1))
 
         self.app.setup_done = True
         self.set_status("All checks passed")
@@ -711,37 +747,33 @@ class SetupPage(AppPage):
         self.set_progress(1.0)
         self.after(600, self.go_next)
 
-    def _check_docker(self):
-        if subprocess.call(["docker", "--version"],
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL,
-                           startupinfo=_SI, creationflags=_CF) != 0:
-            return False, "Docker not installed or not in PATH"
-        if subprocess.call(["docker", "info"],
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL,
-                           startupinfo=_SI, creationflags=_CF) != 0:
-            return False, "Docker daemon not running - start Docker Desktop first"
-        return True, "Docker OK"
-
-    def _check_wrapper(self):
-        if not _run("docker", "images", "-q", WRAPPER_IMAGE, silent=True):
-            ok, msg = build_wrapper_image(profile=self._mirror_profile, log_callback=self.log)
-            if not ok:
-                return False, msg
-        return True, "Wrapper image ready"
-
     def _check_downloader(self):
-        if not _run("docker", "images", "-q", DL_IMAGE, silent=True):
-            ok, msg = build_downloader_image(profile=self._mirror_profile, log_callback=self.log)
-            if not ok:
-                return False, msg
-        return True, "Downloader image ready"
+        exe = get_downloader_exe()
+        if not exe:
+            return False, self.t("downloader_missing")
+        return True, f"Downloader ready: {exe}"
+
+    def _check_wsl(self):
+        problem = wsl_diagnose()
+        if problem:
+            return False, f"WSL unavailable: {problem}"
+        state = wrapper_service_state()
+        if state == "unknown":
+            return False, f"WSL distro '{WSL_DISTRO}' exists but systemd did not answer"
+        return True, f"WSL distro '{WSL_DISTRO}' reachable (service: {state})"
 
     def _start_wrapper(self):
-        ok, msg = do_start_wrapper(self.log)
-        if msg == "NEED_LOGIN":
-            return True, "Login required"
+        ok, _data, _err = wrapper_status(timeout=2)
+        if ok:
+            self.app.wrapper_ready = True
+            return True, f"wrapper already running ({WRAPPER_ENDPOINT})"
+        if not login_cached():
+            # Not a failure: the wrapper cannot open its ports before an Apple
+            # Music sign-in. Treating this as an error used to abort setup
+            # before the login page was ever shown - a deadlock, since signing
+            # in is the only way to make the wrapper start.
+            return True, "Apple Music sign-in required - continuing to the login page"
+        ok, msg = start_wrapper_service(log_callback=self.log)
         if not ok:
             return False, msg
         self.app.wrapper_ready = True
@@ -749,15 +781,7 @@ class SetupPage(AppPage):
 
     def go_next(self):
         session_log._history.clear()
-        db_file = os.path.join(
-            os.path.abspath(WRAPPER_DATA_DIR),
-            "data", "com.apple.android.music", "files", "mpl_db", "kvs.sqlitedb"
-        )
-        fsi_file = os.path.join(
-            os.path.abspath(WRAPPER_DATA_DIR),
-            "data", "com.apple.android.music", "files", "fsi.pdat"
-        )
-        if not os.path.isfile(db_file) or not os.path.isfile(fsi_file):
+        if not login_cached():
             self.app.show_frame("LoginPage")
         else:
             self.app.show_frame("TabbedContainer")
@@ -965,11 +989,15 @@ class LoginPage(AppPage):
 
 
 MODE_SPECS = [
-    ("album",       "专辑",            ""),
-    ("song",        "单曲",            "--song {url}"),
-    ("playlist",    "播放列表",        ""),
-    ("atmos",       "杜比全景声",      "--atmos {url}"),
-    ("aac",         "AAC",             "--aac --aac-type {aac_type} {url}"),
+    ("album",    "mode_album",   ""),
+    ("song",     "mode_song",    "--song {url}"),
+    ("playlist", "mode_playlist",""),
+    ("atmos",    "mode_atmos",   "--atmos {url}"),
+    ("aac",      "mode_aac",     "--aac --aac-type {aac_type} {url}"),
+    ("select",   "mode_select",  "--select {url}"),
+    ("debug",    "mode_debug",   "--debug {url}"),
+    ("search",   "mode_search",  "--search {search_type} {query}"),
+    ("artist",   "mode_artist",  "--all-album {url}"),
 ]
 
 
@@ -1088,6 +1116,8 @@ class MainPage(AppPage):
         self._reposition_timer = None
         self._dl_proc = None
         self._downloading = False
+        self._status_timer = None
+        self._polling = False
         self.build_ui()
 
     def build_ui(self):
@@ -1332,7 +1362,10 @@ class MainPage(AppPage):
         self.console.delete("1.0", "end")
         session_log.replay(self.console)
         self.console.configure(state="disabled")
-        self._update_status()
+        # Probe off the UI thread so switching tabs never stalls.
+        if not self._polling:
+            self._polling = True
+            threading.Thread(target=self._probe_status, daemon=True).start()
         if self._status_timer:
             self.after_cancel(self._status_timer)
         self._status_timer = self.after(3000, self._poll_status)
@@ -1355,29 +1388,51 @@ class MainPage(AppPage):
         self._mode_entry.configure(state="readonly")
 
     def _poll_status(self):
-        try:
-            self._update_status()
-        except Exception:
-            pass
+        # Probe on a worker thread: wrapper_running() opens TCP connections with
+        # retries, and running that on the UI thread froze the window for
+        # seconds at a time - very noticeable while typing.
+        if not self._polling:
+            self._polling = True
+            threading.Thread(target=self._probe_status, daemon=True).start()
         self._status_timer = self.after(3000, self._poll_status)
 
-    def _update_status(self):
+    def _probe_status(self):
+        running = False
         try:
-            running = wrapper_running()
+            running = port_open(port=ACCOUNT_PORT, timeout=0.4, attempts=1)
+            if not running:
+                # WSL's localhost relay drops the occasional SYN, so a failed
+                # TCP probe alone is not proof. The HTTP endpoint is the more
+                # truthful check and this runs off the UI thread anyway.
+                running = wrapper_status(timeout=1.2)[0]
+        except Exception:
+            running = False
+        finally:
+            self._polling = False
+        try:
+            self.after(0, lambda: self._update_status(running))
+        except Exception:
+            pass
+
+    def _update_status(self, running=None):
+        try:
+            if running is None:
+                running = port_open(port=ACCOUNT_PORT, timeout=0.4, attempts=1)
             c = self.app.colors
             if hasattr(self, 'wrapper_dot') and self.wrapper_dot.winfo_exists():
                 dot_color = c["success"] if running else c["error"]
                 self.wrapper_dot.configure(fg_color=dot_color)
-                ports = f"{DECRYPT_PORT}:{M3U8_PORT}:{ACCOUNT_PORT}"
+                ports = WRAPPER_ENDPOINT
                 status_text = self.t("running_status", ports=ports) if running else self.t("stopped")
                 self._status_text.configure(text=status_text)
         except Exception:
             pass
 
     def _mode_name(self, key):
-        i18n_map = {"album": "mode_album", "song": "mode_song", "playlist": "mode_playlist",
-                    "atmos": "mode_atmos", "aac": "mode_aac"}
-        return self.t(i18n_map.get(key, key))
+        for spec in MODE_SPECS:
+            if spec[0] == key:
+                return self.t(spec[1])
+        return key
 
     def _show_mode_popup(self):
         if self._popup and self._popup.winfo_exists():
@@ -1455,6 +1510,9 @@ class MainPage(AppPage):
         if key == "aac":
             self._add_extra_dropdown(self.t("format_label"), ["aac-lc", "aac", "aac-binaural", "aac-downmix"], "aac-lc")
             self._extra_row.pack(fill="x", pady=(6, 0))
+        elif key == "search":
+            self._add_extra_dropdown(self.t("search_type"), ["song", "album", "artist"], "song")
+            self._extra_row.pack(fill="x", pady=(6, 0))
         else:
             self._extra_row.pack_forget()
 
@@ -1477,25 +1535,13 @@ class MainPage(AppPage):
 
     def _ensure_prereqs(self):
         if not wrapper_running():
-            if not self.app.wrapper_ready:
-                ok, msg = do_start_wrapper()
-                if not ok:
-                    if msg == "NEED_LOGIN":
-                        self.app.show_frame("LoginPage")
-                        return False
-                    self.log(f"[ERROR] {msg}")
-                    return False
-                self.app.wrapper_ready = True
-            else:
-                ok, msg = do_start_wrapper()
-                if not ok:
-                    if msg == "NEED_LOGIN":
-                        self.app.show_frame("LoginPage")
-                    else:
-                        self.log(f"[ERROR] {msg}")
-                    return False
-        if not _run("docker", "images", "-q", DL_IMAGE, silent=True):
-            self.log("[ERROR] Downloader image not found")
+            ok, msg = do_start_wrapper(self.log)
+            if not ok:
+                self.log(f"[ERROR] {msg}")
+                return False
+            self.app.wrapper_ready = True
+        if not get_downloader_exe():
+            self.log(f"[ERROR] {self.t('downloader_missing')}")
             return False
         return True
 
@@ -1508,29 +1554,22 @@ class MainPage(AppPage):
         spec = next(m for m in MODE_SPECS if m[0] == key)
         tmpl = spec[2]
 
-        title = None
+        url = self._url_var.get().strip()
+        if not url:
+            return
+
+        title = self._mode_name(key)
         if key == "aac":
-            url = self._url_var.get().strip()
-            if not url:
-                return
             aac_type = self._extra_widgets[1].get() if len(self._extra_widgets) >= 2 else "aac-lc"
             args = tmpl.format(aac_type=aac_type, url=url)
-            title = f"AAC ({aac_type})"
-        elif key == "song":
-            url = self._url_var.get().strip()
-            if not url:
-                return
-            args = f"--song {url}"
-            title = "单曲"
+            title = f"{title} ({aac_type})"
+        elif key == "search":
+            search_type = self._extra_widgets[1].get() if len(self._extra_widgets) >= 2 else "song"
+            args = tmpl.format(search_type=search_type, query=url)
+            title = f"{title} ({search_type})"
         else:
-            url = self._url_var.get().strip()
-            if not url:
-                return
             args = tmpl.format(url=url) if tmpl else url
-            title = spec[1]
 
-        if not self._ensure_prereqs():
-            return
         self.log(f">>> {title}")
         self._downloading = True
         self._go_btn.configure(fg_color=self.c("error"), hover_color="#CC2F26",
@@ -1553,66 +1592,78 @@ class MainPage(AppPage):
             pass
 
     def _dl_thread(self, arguments):
-        config_path = get_config_path()
-        if config_path:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config_content = f.read()
-        else:
-            self.log("[WARN] No config.yaml found, using defaults")
-            config_content = ""
+        # Prerequisite checks spawn wsl.exe and open sockets, so they belong on
+        # this worker thread - not on the button handler, where they froze the
+        # window for seconds before the download even started.
+        if not self._ensure_prereqs():
+            self.after(0, self._on_download_done)
+            return
 
-        config_content = prepare_config_for_docker(config_content)
+        exe = get_downloader_exe()
+        if not exe:
+            self.log(f"[ERROR] {self.t('downloader_missing')}")
+            self.after(0, self._on_download_done)
+            return
+
+        if not get_config_path():
+            self.log("[WARN] No config.yaml found, using defaults")
 
         dl_args = arguments.split()
+        dl_folder = get_save_folder("alac")
+
+        # The legacy downloader reads config.yaml from its working directory,
+        # so it runs inside a temp dir whose config points at the real output.
+        workdir, _cfg = prepare_run_config()
+        argv = build_downloader_command(dl_args, workdir)
+        if not argv:
+            cleanup_run_config(workdir)
+            self.log("[ERROR] Downloader binary not found in WSL")
+            self.after(0, self._on_download_done)
+            return
 
         for attempt in range(1, 4):
             if attempt > 1:
                 self.log(f"[RETRY] Attempt {attempt}/3...")
                 time.sleep(2)
 
-            fd, tmp_config = tempfile.mkstemp(suffix='.yaml', prefix='am_config_')
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                f.write(config_content)
-
             try:
                 proc = subprocess.Popen(
-                    ["docker", "run", "--rm",
-                     "-v", f"{DOWNLOAD_DIR}:/downloads",
-                     "-v", f"{tmp_config}:/app/config.yaml",
-                     DL_IMAGE] + dl_args,
-                                        stdout=subprocess.PIPE,
-                                        stderr=subprocess.STDOUT,
-                                        text=True, encoding="utf-8", errors="replace",
-                                        startupinfo=_SI, creationflags=_CF)
-                self._dl_proc = proc
-                buf = ""
-                try:
-                    for ch in iter(lambda: proc.stdout.read(1), ""):
-                        if ch in ("\r", "\n"):
-                            if buf.strip():
-                                if "%" in buf:
-                                    self.log_replace(buf.strip())
-                                else:
-                                    self.log(buf.strip())
-                            buf = ""
-                        else:
-                            buf += ch
-                    if buf.strip():
-                        self.log(buf.strip())
-                    proc.wait()
-                    if proc.returncode == 0:
-                        break
-                    self.log(f"Exit code: {proc.returncode}")
-                    continue
-                except Exception:
-                    pass
-            finally:
-                try:
-                    os.remove(tmp_config)
-                except Exception:
-                    pass
+                    argv,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True, encoding="utf-8", errors="replace",
+                    env=downloader_env(),
+                    startupinfo=_SI, creationflags=_CF)
+            except Exception as e:
+                self.log(f"[ERROR] Failed to launch downloader: {e}")
+                break
 
-        self.log(f"Done - output: {get_download_folder()}")
+            self._dl_proc = proc
+            buf = ""
+            try:
+                for ch in iter(lambda: proc.stdout.read(1), ""):
+                    if ch in ("\r", "\n"):
+                        if buf.strip():
+                            if "%" in buf:
+                                self.log_replace(buf.strip())
+                            else:
+                                self.log(buf.strip())
+                        buf = ""
+                    else:
+                        buf += ch
+                if buf.strip():
+                    self.log(buf.strip())
+                proc.wait()
+                if proc.returncode == 0:
+                    break
+                self.log(f"Exit code: {proc.returncode}")
+            except Exception:
+                pass
+
+        cleanup_run_config(workdir)
+        self.log(f"Done - output: {dl_folder}")
+        if not wrapper_running():
+            wrapper_health_after_run(log_callback=self.log)
         self.after(0, self._on_download_done)
 
 
@@ -1637,6 +1688,14 @@ class ConfigPage(AppPage):
 
         btn_frame = ctk.CTkFrame(topbar, fg_color="transparent")
         btn_frame.pack(side="right", padx=6)
+
+        self.token_btn = ctk.CTkButton(btn_frame, text=self.t("get_token"), width=96, height=30,
+                                       corner_radius=6,
+                                       fg_color=c["input_bg"], hover_color=c["divider"],
+                                       text_color=c["text"],
+                                       font=ctk.CTkFont(family=f, size=12),
+                                       command=self._get_media_token)
+        self.token_btn.pack(side="left", padx=(0, 6)); self._reg(self.token_btn, "get_token")
 
         self.reload_btn = ctk.CTkButton(btn_frame, text=self.t("reload"), width=72, height=30,
                                         corner_radius=6,
@@ -1695,6 +1754,147 @@ class ConfigPage(AppPage):
         except Exception as e:
             self.status_label.configure(text=self.t("config_save_failed", error=e), text_color=self.c("error"))
 
+    # ---- media-user-token helper -------------------------------------
+    def _get_media_token(self):
+        """Auto-detect a media-user-token, or guide the user to paste one."""
+        self.token_btn.configure(state="disabled", text="...")
+        self.status_label.configure(text=self.t("token_searching"),
+                                    text_color=self.c("text_secondary"))
+        threading.Thread(target=self._media_token_worker, daemon=True).start()
+
+    def _media_token_worker(self):
+        token, source, notes = find_media_user_token()
+        if token:
+            ok, detail = validate_media_user_token(token)
+            if ok:
+                save_media_user_token(token)
+                self.after(0, lambda: self._media_token_done(
+                    True, self.t("token_found", source=source, detail=detail)))
+                return
+            notes.append(f"{source}: {detail}")
+        self.after(0, lambda: self._media_token_prompt(notes))
+
+    def _media_token_done(self, ok, message):
+        self.token_btn.configure(state="normal", text=self.t("get_token"))
+        self.status_label.configure(
+            text=message, text_color=self.c("success") if ok else self.c("error"))
+        if ok:
+            self._reload_config()
+
+    def _copy_to_clipboard(self, text):
+        """Copy text to the clipboard and confirm on the status label."""
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            self.update()
+            self.status_label.configure(text=self.t("token_copied"),
+                                        text_color=self.c("success"))
+        except Exception as e:
+            self.status_label.configure(text=str(e), text_color=self.c("error"))
+
+    def _media_token_prompt(self, notes):
+        """Fallback: explain how to get the token and accept a pasted value."""
+        self.token_btn.configure(state="normal", text=self.t("get_token"))
+        self.status_label.configure(text=self.t("token_not_found"),
+                                    text_color=self.c("text_secondary"))
+        c = self.app.colors
+        f = FONT_FAMILY
+
+        dlg = ctk.CTkToplevel(self)
+        dlg.title(self.t("token_dialog_title"))
+        dlg.geometry("640x500")
+        dlg.transient(self)
+        dlg.grab_set()
+
+        # A read-only textbox instead of a label so the URL and the steps can be
+        # selected and copied (labels are not selectable).
+        howto = self.t("token_howto")
+        if notes:
+            howto += "\n\n" + "\n".join("• " + n for n in notes)
+        howto_box = ctk.CTkTextbox(dlg, height=150,
+                                   fg_color=c["input_bg"], text_color=c["text"],
+                                   border_color=c["border"], border_width=1,
+                                   corner_radius=8, wrap="word",
+                                   font=ctk.CTkFont(family=f, size=12))
+        howto_box.pack(fill="x", padx=16, pady=(14, 8))
+        howto_box.insert("1.0", howto)
+        howto_box.configure(state="disabled")
+
+        open_row = ctk.CTkFrame(dlg, fg_color="transparent")
+        open_row.pack(fill="x", padx=16, pady=(0, 8))
+        ctk.CTkButton(open_row, text=self.t("token_open_browser"), width=170, height=30,
+                      corner_radius=6, fg_color=c["primary"],
+                      hover_color=c["primary_hover"], text_color="white",
+                      font=ctk.CTkFont(family=f, size=12),
+                      command=lambda: webbrowser.open("https://music.apple.com")
+                      ).pack(side="left")
+        ctk.CTkButton(open_row, text=self.t("token_copy_url"), width=120, height=30,
+                      corner_radius=6, fg_color=c["input_bg"],
+                      hover_color=c["divider"], text_color=c["text"],
+                      font=ctk.CTkFont(family=f, size=12),
+                      command=lambda: self._copy_to_clipboard(
+                          "https://music.apple.com")
+                      ).pack(side="left", padx=(8, 0))
+
+        entry = ctk.CTkEntry(dlg, height=38, corner_radius=8,
+                             fg_color=c["input_bg"], text_color=c["text"],
+                             border_color=c["border"],
+                             font=ctk.CTkFont(family=MONO_FAMILY, size=11),
+                             placeholder_text=self.t("token_placeholder"))
+        entry.pack(fill="x", padx=16, pady=(4, 6))
+
+        result = ctk.CTkLabel(dlg, text="", font=ctk.CTkFont(family=f, size=11),
+                              text_color=c["text_secondary"], anchor="w")
+        result.pack(fill="x", padx=16)
+
+        def clear_placeholder(event=None):
+            try:
+                if entry.get().endswith("\u2026"):
+                    entry.delete(0, "end")
+            except Exception:
+                pass
+        entry.bind("<FocusIn>", clear_placeholder)
+
+        def submit():
+            value = entry.get().strip()
+            if not value:
+                result.configure(text=self.t("token_empty"), text_color=c["error"])
+                return
+            verify.configure(state="disabled", text="...")
+            result.configure(text=self.t("token_checking"),
+                             text_color=c["text_secondary"])
+
+            def work():
+                ok, detail = validate_media_user_token(value)
+                def finish():
+                    verify.configure(state="normal", text=self.t("token_verify_save"))
+                    if ok:
+                        save_media_user_token(value)
+                        dlg.destroy()
+                        self._media_token_done(
+                            True, self.t("token_saved", detail=detail))
+                    else:
+                        result.configure(text=detail, text_color=c["error"])
+                self.after(0, finish)
+            threading.Thread(target=work, daemon=True).start()
+
+        row = ctk.CTkFrame(dlg, fg_color="transparent")
+        row.pack(fill="x", padx=16, pady=12)
+        verify = ctk.CTkButton(row, text=self.t("token_verify_save"), width=150, height=34,
+                               corner_radius=8, fg_color=c["primary"],
+                               hover_color=c["primary_hover"], text_color="white",
+                               font=ctk.CTkFont(family=f, size=12, weight="bold"),
+                               command=submit)
+        verify.pack(side="right")
+        ctk.CTkButton(row, text=self.t("token_cancel"), width=80, height=34,
+                      corner_radius=8, fg_color=c["input_bg"],
+                      hover_color=c["divider"], text_color=c["text"],
+                      font=ctk.CTkFont(family=f, size=12),
+                      command=dlg.destroy).pack(side="right", padx=(0, 8))
+
+        entry.focus_set()
+        entry.bind("<Return>", lambda e: submit())
+
 
 class StatusPage(AppPage):
     def __init__(self, parent, app):
@@ -1731,17 +1931,12 @@ class StatusPage(AppPage):
         scroll.pack(fill="both", expand=True, padx=12, pady=8)
 
         sections = [
-            ("s_docker", [
-                ("docker-installed", "docker_installed"),
-                ("docker-running", "docker_running"),
-            ]),
-            ("s_images", [
-                ("wrapper-image", "wrapper_image"),
-                ("downloader-image", "dl_image"),
-            ]),
             ("s_wrapper", [
+                ("wrapper-endpoint", "wrapper_endpoint"),
+                ("wrapper-service", "wrapper_service"),
                 ("wrapper-container", "wrapper_container"),
                 ("wrapper-ports", "wrapper_ports"),
+                ("wrapper-storefront", "wrapper_storefront"),
             ]),
             ("s_login", [
                 ("login-cached", "login_cached"),
@@ -1795,18 +1990,7 @@ class StatusPage(AppPage):
                 self._reg(self._restart_btn, "wrapper_restart")
 
             # Add export button inside the images card
-            if section_key == "s_images":
-                export_row = ctk.CTkFrame(card, fg_color="transparent", height=32)
-                export_row.pack(fill="x", padx=10, pady=3)
-                export_row.pack_propagate(False)
-                self._export_btn = ctk.CTkButton(export_row, text=self.t("export_images"),
-                                                 fg_color=c["primary"], hover_color=c["primary_hover"],
-                                                 text_color="white",
-                                                 font=ctk.CTkFont(family=f, size=12),
-                                                 corner_radius=6, height=26,
-                                                 command=self._export_images)
-                self._export_btn.pack(side="left")
-                self._reg(self._export_btn, "export_images")
+            # (removed: image export is no longer applicable)
 
         path_header = ctk.CTkLabel(scroll, text=self.t("s_paths"),
                                    font=ctk.CTkFont(family=f, size=13, weight="bold"),
@@ -1821,7 +2005,7 @@ class StatusPage(AppPage):
         paths = [
             ("config-path", "config_path_label", CONFIG_FILE),
             ("log-path", "log_path_label", LOG_DIR),
-            ("wrapper-data-path", "wrapper_data_path_label", WRAPPER_DATA_DIR),
+            ("downloader-path", "downloader_path_label", get_downloader_exe() or "—"),
         ]
 
         for key, i18n_key, path in paths:
@@ -1858,42 +2042,34 @@ class StatusPage(AppPage):
         c = self.app.colors
         results = {}
 
-        docker_ver = _run("docker", "--version", silent=True)
-        results["docker-installed"] = (docker_ver != "", docker_ver.replace("Docker version ", "") if docker_ver else self.t("not_installed"))
+        results["wrapper-endpoint"] = (True, WRAPPER_ENDPOINT)
 
-        docker_info = _run("docker", "info", silent=True)
-        results["docker-running"] = (docker_info != "", self.t("running") if docker_info else self.t("not_running"))
+        state = wrapper_service_state()
+        results["wrapper-service"] = (state == "active", state)
 
-        wrapper_img = _run("docker", "images", "-q", WRAPPER_IMAGE, silent=True)
-        results["wrapper-image"] = (wrapper_img != "", wrapper_img[:12] if wrapper_img else self.t("not_built"))
+        ok, data, err = wrapper_status(timeout=5)
+        results["wrapper-container"] = (ok, self.t("running") if ok else self.t("not_running"))
 
-        dl_img = _run("docker", "images", "-q", DL_IMAGE, silent=True)
-        results["downloader-image"] = (dl_img != "", dl_img[:12] if dl_img else self.t("not_built"))
+        results["wrapper-ports"] = (ok, f"{DECRYPT_PORT} / {M3U8_PORT} / {ACCOUNT_PORT}" if ok else "—")
 
-        wrapper_ok = wrapper_running()
-        results["wrapper-container"] = (wrapper_ok, self.t("running") if wrapper_ok else self.t("stopped"))
+        storefront = (data or {}).get("storefront_id") or ""
+        results["wrapper-storefront"] = (bool(storefront), storefront or "—")
 
-        ports_text = f"{DECRYPT_PORT} / {M3U8_PORT} / {ACCOUNT_PORT}" if wrapper_ok else "—"
-        results["wrapper-ports"] = (wrapper_ok, ports_text)
-
-        db_file = os.path.join(os.path.abspath(WRAPPER_DATA_DIR),
-                               "data", "com.apple.android.music", "files", "mpl_db", "kvs.sqlitedb")
-        fsi_file = os.path.join(os.path.abspath(WRAPPER_DATA_DIR),
-                                "data", "com.apple.android.music", "files", "fsi.pdat")
-        has_login = os.path.isfile(db_file) and os.path.isfile(fsi_file)
-        results["login-cached"] = (has_login, self.t("logged_in") if has_login else self.t("not_logged_in"))
+        has_login = login_cached()
+        results["login-cached"] = (has_login,
+                                   self.t("logged_in") if has_login else self.t("not_logged_in"))
 
         def update():
-            for key, (ok, text) in results.items():
+            for key, (ok2, text) in results.items():
                 if key in self._items:
                     dot, label = self._items[key]
-                    dot.configure(fg_color=c["success"] if ok else c["error"])
+                    dot.configure(fg_color=c["success"] if ok2 else c["error"])
                     label.configure(text=text)
             for key, lbl in self._path_labels.items():
                 path_map = {
                     "config-path": CONFIG_FILE,
                     "log-path": LOG_DIR,
-                    "wrapper-data-path": WRAPPER_DATA_DIR,
+                    "downloader-path": get_downloader_exe() or "—",
                 }
                 if key in path_map:
                     lbl.configure(text=path_map[key])
@@ -1901,33 +2077,14 @@ class StatusPage(AppPage):
 
     def _restart_wrapper(self):
         self._restart_btn.configure(state="disabled", text=self.t("wrapper_restarting"))
-        stop_wrapper()
         threading.Thread(target=self._do_restart_wrapper, daemon=True).start()
 
     def _do_restart_wrapper(self):
-        ok, msg = do_start_wrapper()
+        ok, msg = restart_wrapper_service(log_callback=None)
         self.after(0, lambda: self._restart_btn.configure(
             state="normal", text=self.t("wrapper_restart")
         ))
         self.after(0, self._refresh)
-
-    def _export_images(self):
-        from tkinter import filedialog
-        image_dir = filedialog.askdirectory(title=self.t("select_image_dir_title"))
-        if not image_dir:
-            return
-        self._export_btn.configure(state="disabled", text="...")
-        threading.Thread(target=lambda: self._do_export(image_dir), daemon=True).start()
-
-    def _do_export(self, output_dir):
-        ok = export_images(output_dir, log_callback=None)
-        self.after(0, lambda: self._export_btn.configure(
-            state="normal", text=self.t("export_done") if ok else self.t("export_failed")
-        ))
-        if ok:
-            self.after(3000, lambda: self._export_btn.configure(
-                state="normal", text=self.t("export_images")
-            ))
 
     def refresh_language(self):
         super().refresh_language()
@@ -2106,9 +2263,10 @@ class ConvertPage(AppPage):
         self._log.delete("1.0", "end")
         self._log.configure(state="disabled")
 
-        ffmpeg = shutil.which("ffmpeg")
+        ffmpeg = find_tool("ffmpeg")
         if not ffmpeg:
-            self.log("[WARN] ffmpeg/ffprobe not found, attempting winget install...")
+            self.log("[WARN] ffmpeg not found in assets or PATH")
+            self.log("[INFO] Place ffmpeg.exe in the assets folder, or install via winget...")
             self._converting = True
             self._convert_btn.configure(state="disabled", text=self.t("convert_running"))
             threading.Thread(target=self._try_install_ffmpeg, daemon=True).start()
@@ -2119,21 +2277,33 @@ class ConvertPage(AppPage):
         threading.Thread(target=self._do_convert, daemon=True).start()
 
     def _try_install_ffmpeg(self):
+        self.after(0, lambda: self.log("[INFO] Running winget install (this may take a few minutes)..."))
         try:
             result = subprocess.run(
-                ["winget", "install", "--id", "Gyan.FFmpeg", "--accept-source-agreements", "--accept-package-agreements", "--silent"],
+                ["winget", "install", "--id", "Gyan.FFmpeg", "-e",
+                 "--accept-source-agreements", "--accept-package-agreements", "--disable-interactivity"],
                 capture_output=True, text=True,
                 startupinfo=_SI, creationflags=_CF,
-                timeout=120
+                timeout=600
             )
             if result.returncode == 0:
-                self.after(0, lambda: self.log("[OK] ffmpeg installed, please restart convert"))
+                self.after(0, lambda: self.log("[OK] ffmpeg installed"))
+                ffmpeg = find_tool("ffmpeg")
+                if ffmpeg:
+                    self.after(0, lambda: self.log(f"[OK] Found: {ffmpeg}"))
+                    self.after(0, self._start_convert)
+                    return
+                self.after(0, lambda: self.log("[INFO] Restart the app, then convert again"))
             else:
-                self.after(0, lambda: self.log("[ERROR] winget install failed"))
-                self.after(0, lambda: self.log("[INFO] Install ffmpeg manually: https://ffmpeg.org/download.html"))
+                err = (result.stderr or result.stdout or "").strip()[:200]
+                self.after(0, lambda: self.log(f"[ERROR] winget install failed: {err}"))
+                self.after(0, lambda: self.log("[INFO] Place ffmpeg.exe in assets/ manually"))
         except FileNotFoundError:
             self.after(0, lambda: self.log("[ERROR] winget not found"))
-            self.after(0, lambda: self.log("[INFO] Install ffmpeg manually: https://ffmpeg.org/download.html"))
+            self.after(0, lambda: self.log("[INFO] Place ffmpeg.exe in assets/ manually"))
+        except subprocess.TimeoutExpired:
+            self.after(0, lambda: self.log("[ERROR] winget install timed out"))
+            self.after(0, lambda: self.log("[INFO] Place ffmpeg.exe in assets/ manually"))
         except Exception as e:
             self.after(0, lambda: self.log(f"[ERROR] {e}"))
         self.after(0, self._reset_btn)
@@ -2162,7 +2332,7 @@ class ConvertPage(AppPage):
         total = len(files)
         ok_count = 0
         fmt = self._format_var.get().lower()
-        ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
+        ffmpeg = find_tool("ffmpeg") or "ffmpeg"
 
         for i, src in enumerate(files):
             base = os.path.splitext(src)[0]
@@ -2200,7 +2370,7 @@ class ConvertPage(AppPage):
                         self.after(0, lambda e=result.stderr.strip()[:200]: self.log(f"  [ERROR] {e}"))
             except FileNotFoundError as fe:
                 self.after(0, lambda: self.log(f"[ERROR] {fe.filename} not found"))
-                self.after(0, lambda: self.log("[INFO] Install ffmpeg or place flac.exe in assets/"))
+                self.after(0, lambda: self.log("[INFO] Place ffmpeg.exe in the assets folder"))
                 break
             except Exception as e:
                 self.after(0, lambda n=name_noext, err=str(e): self.log(f"[ERROR] {n}: {err}"))
@@ -2399,17 +2569,22 @@ class RenamePage(AppPage):
         threading.Thread(target=self._do_rename, daemon=True).start()
 
     def _do_rename(self):
-        ffprobe = shutil.which("ffprobe") or "ffprobe"
+        ffprobe = find_tool("ffprobe")
         selected_fmt = self._format_var.get()
         is_track = selected_fmt == self.t("rename_tpl_track")
         self.after(0, lambda: self.log(self.t("rename_scanning")))
+
+        if not ffprobe:
+            self.after(0, lambda: self.log(self.t("rename_no_tool")))
+            self.after(0, self._reset_btn)
+            return
 
         files = []
         try:
             for root, dirs, filenames in os.walk(self._source_dir):
                 for f in sorted(filenames):
                     ext = os.path.splitext(f)[1].lower()
-                    if ext in ('.flac', '.wav'):
+                    if ext in ('.flac', '.wav', '.m4a', '.aif', '.aiff', '.ape', '.wv'):
                         files.append(os.path.join(root, f))
         except Exception as e:
             self.after(0, lambda: self.log(f"[ERROR] {e}"))
@@ -2430,42 +2605,47 @@ class RenamePage(AppPage):
             ext = os.path.splitext(src)[1]
             self.after(0, lambda v=(i+1)/total: self._progress.set(v))
 
-            # Extract tags
+            # Extract tags (ffprobe reports tag keys lower-cased in JSON output)
             tags = {}
             try:
                 p = subprocess.run(
                     [ffprobe, "-v", "error",
-                     "-show_entries", "format_tags=ARTIST,TITLE",
-                     "-of", "default=noprint_wrappers=1", src],
-                    capture_output=True, text=True,
+                     "-show_entries", "format_tags",
+                     "-of", "json", src],
+                    capture_output=True, text=True, encoding="utf-8",
+                    errors="replace",
                     startupinfo=_SI, creationflags=_CF
                 )
                 if p.returncode == 0 and p.stdout.strip():
-                    for line in p.stdout.strip().split('\n'):
-                        upper = line.upper()
-                        if upper.startswith("TAG:ARTIST="):
-                            tags["ARTIST"] = line.split("=", 1)[1].strip()
-                        elif upper.startswith("TAG:TITLE="):
-                            tags["TITLE"] = line.split("=", 1)[1].strip()
+                    raw = json.loads(p.stdout).get("format", {}).get("tags", {})
+                    tags = {str(k).lower(): str(v).strip()
+                            for k, v in raw.items() if v is not None}
             except Exception:
                 pass
 
-            artist = tags.get("ARTIST", "")
-            title = tags.get("TITLE", "")
+            title = tags.get("title", "")
+            artist = tags.get("artist", "") or tags.get("album_artist", "")
+            if artist.lower() in ("", "unknown", "unknown artist"):
+                artist = tags.get("album_artist", "")
 
             if is_track:
                 if not title:
                     self.after(0, lambda n=name: self.log(self.t("rename_no_tag", file=n)))
                     continue
-                track_num = os.path.splitext(name)[0].split('.')[0]
-                new_base = track_num + ". " + title
+                # Prefer the leading number in the filename so existing
+                # zero-padding is preserved; fall back to the TRACK tag.
+                m = re.match(r'^\s*(\d+)', os.path.splitext(name)[0])
+                track_num = m.group(1) if m else tags.get("track", "").split("/")[0].strip()
+                if not track_num.isdigit():
+                    track_num = ""
+                new_base = f"{track_num}. {title}" if track_num else title
             else:
                 if not artist or not title:
                     self.after(0, lambda n=name: self.log(self.t("rename_no_tag", file=n)))
                     continue
                 new_base = artist + " - " + title
 
-            new_name = new_base + ext
+            new_name = _sanitize_filename(new_base) + ext
             new_path = os.path.join(os.path.dirname(src), new_name)
 
             if os.path.normpath(src) == os.path.normpath(new_path):
