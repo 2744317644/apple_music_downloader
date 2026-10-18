@@ -210,6 +210,23 @@ autoProxy=true
 
 改完需要 `wsl --shutdown` 生效。
 
+## 自检
+
+```powershell
+.\scripts\smoke-test.ps1            # 全部检查
+.\scripts\smoke-test.ps1 -SkipWsl   # 部署前只查 Python 侧
+```
+
+10 项只读检查，覆盖历史上真实出过问题的地方：源码可解析、`common` 可导入、
+config 可读、临时目录能创建且**能彻底删除**、发行版存在、下载器与 MP4Box 可执行、
+凭据已缓存、wrapper 有应答。
+
+单项也可以单独跑，方便脚本化：
+
+```powershell
+python scripts\smoke_checks.py status     # 退出码 0 = 通过
+```
+
 ## 运行期行为
 
 | 时机 | 发生什么 |
