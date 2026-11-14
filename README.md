@@ -9,7 +9,7 @@
 本项目基于以下优秀的开源项目构建：
 
 - **[apple-music-downloader](https://github.com/zhaarey/apple-music-downloader)** — Apple Music ALAC / Atmos / AAC 下载核心
-- **[wrapper](https://github.com/WorldObservationLog/wrapper)** — Apple Music Android DRM 解密服务（本方案使用其 `lite` 分支）
+- **[wrapper](https://github.com/WorldObservationLog/wrapper)** — Apple Music Android DRM 解密服务（本项目使用其 **legacy 版预编译二进制**，连同 `rootfs/` 一起放在 `assets/Wrapper/`）
 
 感谢以上项目的作者和贡献者们。
 
