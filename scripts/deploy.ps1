@@ -817,8 +817,11 @@ if (-not $SkipWslConfig) {
         autoProxy      = 'true'
     }
     # Keep the swap file off a nearly-full system drive when a location was given.
+    # Forward slashes are required: WSL parses .wslconfig values as escape
+    # sequences, so "D:\WSL\swap.vhdx" makes it fail with "invalid escape
+    # character" and the whole file is ignored.
     if ($Location) {
-        $desired['swapFile'] = (Join-Path $Location 'swap.vhdx')
+        $desired['swapFile'] = ((Join-Path $Location 'swap.vhdx') -replace '\\', '/')
     }
 
     if (Test-Path $cfg) {
